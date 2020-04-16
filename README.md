@@ -9,13 +9,13 @@ This application supports the [Getting Started with Python on Heroku](https://de
 Make sure you have Python 3.7 [installed locally](http://install.python-guide.org). To push to Heroku, you'll need to install the [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli), as well as [Postgres](https://devcenter.heroku.com/articles/heroku-postgresql#local-setup).
 
 ```sh
-$ git clone https://github.com/heroku/python-getting-started.git
-$ cd python-getting-started
+$ git clone https://github.com/RyanQuey/python-heroku-khmer-speech-to-text.git
+$ cd python-heroku-khmer-speech-to-text
 
-$ python3 -m venv getting-started
+$ python3 -m venv venv
 $ pip install -r requirements.txt
 
-$ createdb python_getting_started
+$ createdb khmer_speech_to_text
 
 $ python manage.py migrate
 $ python manage.py collectstatic
