@@ -3,16 +3,44 @@ from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import Greeting
-from .transcribe import download_file
+from .transcribe import request_long_running_recognize, setup_request
 
-from google.cloud import firestore
-from google.cloud import storage
-from google.cloud import speech_v1p1beta1
-from google.cloud.speech_v1p1beta1 import enums
+from copy import deepcopy
 import logging
 logger = logging.getLogger('testlogger')
 
 import os
+import json
+from django.http import HttpResponse
+
+
+APIS = ["v1", "v1p1beta"]
+BASE_REQUEST_OPTIONS = {
+  # maybe better to ask users to stop doing multiple channels, unless it actually helps
+  "multiple_channels": False, 
+  "api": APIS[1],
+  "failed_attempts": 0, # TODO move to diff dict, since it's not an option
+}
+
+####################################
+# Helpers
+####################################
+# use custom response class to override HttpResponse.close()
+class LogSuccessResponse(HttpResponse):
+    def close(self):
+        super(LogSuccessResponse, self).close()
+
+        # do whatever you want, this is the last codepoint in request handling
+        logger.info("starting long request")
+        logger.info(self.content)
+        all_of_it = self.getvalue()
+        my_json = json.loads(all_of_it)
+        data = my_json["data"]
+        request = my_json["request"]
+        options_dict = my_json["options_dict"]
+        request_long_running_recognize(request, data, options_dict)
+
+        logger.info("all done calling it at least")
 
 # Create your views here.
 def index(request):
@@ -37,26 +65,41 @@ def transcribe(request):
     Performs asynchronous speech recognition on an audio file
 
     fields:
-      storage_uri URI for audio file in Cloud Storage, e.g. gs://[BUCKET]/[FILE]
+      url URI for audio file in Cloud Storage, e.g. gs://[BUCKET]/[FILE]
     """
 
     logger.info("env: " + os.environ.get('DJANGO_ENV'))
 
     if request.method == "POST":
-        data = request.POST.copy()
-        logger.info(data)
+        # data = deepcopy(request.POST)
+        logger.info("raw body")
 
-        # extract the form field data
-        storage_uri = request.POST.get('storage_uri', '')
+        logger.info(request.body)
+        data = json.loads(request.body)
+        # starts with base options and gets mutated over time
+        options_dict = deepcopy(BASE_REQUEST_OPTIONS)
+        request = setup_request(data, options_dict)
          
     	# download file according to url received in post
-        download_file(storage_uri)
-    	# TODO later, convert file
+
+        # an async func, should not stop returning the response
+        # want to keep going after we finish this task
+        
+    	# TODO later, optionally convert file
     	# transcribe
+        response = LogSuccessResponse(json.dumps({
+            "data": data,
+            "options_dict": options_dict,
+            "request": request,
+            }), content_type='application/json')
+        return response
     else:
         logger.info(request.method)
+        html = f"<html><body>Wasn't a post....</body></html>"
+        return HttpResponse(html)
 
 
-    html = f"<html><body>It is now {storage_uri}.</body></html>"
-    return HttpResponse(html)
+
+    # html = f"<html><body>It is now sending something back.</body></html>"
+    # return HttpResponse(html)
 

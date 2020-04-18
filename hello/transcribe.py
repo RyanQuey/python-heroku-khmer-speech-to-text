@@ -1,25 +1,43 @@
 import os
+import asyncio
 from django.conf import settings
-from google.cloud import firestore
-from google.cloud import storage
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import storage
+from firebase_admin import firestore
 from google.cloud import speech_v1p1beta1
 from google.cloud.speech_v1p1beta1 import enums
+
+
 from datetime import datetime
 # experiment with logging
 import traceback
 import logging
+import json
+
+APP_NAME = "khmer-speech-to-text"
+BUCKET_NAME = "khmer-speech-to-text.appspot.com"
 logger = logging.getLogger('testlogger')
+admin_key = os.environ.get('ADMIN_KEY_LOCATION')
+no_role_key = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+
+# path to service account json file
+service_account = admin_key or no_role_key
+logger.info("which one is it??\n" + service_account)
+cred = credentials.Certificate(service_account)
+firebase_admin.initialize_app(cred, {
+  'storageBucket': f'{BUCKET_NAME}'
+})
 
 # alias so don't have to write out the beta part
 # for now only using the beta
 speech = speech_v1p1beta1
-speech_client = speech_v1p1beta1.SpeechClient()
+speech_client = speech.SpeechClient.from_service_account_json(service_account)
 
-storage_client = storage.Client()
-bucket = storage_client.bucket("khmer-speech-to-text.appspot.com")
+bucket = storage.bucket()
 
 cwd = os.getcwd()
-destination_file_name = cwd + "/tmp/"
+destination_filename = cwd + "/tmp/"
 
 WHITE_LISTED_USERS = [
 	"rlquey2@gmail.com",
@@ -63,8 +81,10 @@ wav_config = {**base_config,
 }
 
 # returns the received request body and mutates request_options along the way 
+# TODO request_options should be renamed to "request_dict"
+# TODO make classes for the data object, maybe other objects as well. Set properties to it based on the data_dict used here. Then can access things via the properties, and it's more managable and usable throughout the request lifecycle
 def setup_request(data, request_options):
-    file_type = data["file_type"]
+    file_type = data["content_type"]
     request_options["file_type"] = file_type
     request_options["file_extension"] = file_type.replace("audio/", "")
     request_options[request_options["file_extension"]] = True
@@ -77,16 +97,16 @@ def setup_request(data, request_options):
     if (data["file_path"]):
         # is in google cloud storage
         
-        audio = speech.types.RecognitionAudio(
-            uri = f"gs://khmer-speech-to-text.appspot.com/{data['file_path']}"
-        )
+        audio = {
+                "uri": f"gs://khmer-speech-to-text.appspot.com/{data['file_path']}"
+            }
         
         # if no data["file_path"], then there should just be base64
     else:
         # not really testing or using right now
-        audio = speech.types.RecognitionAudio(
-            content = data["base64"]
-        )
+        audio = {
+                "content": data["base64"]
+            }
 
     
     if (request_options["file_extension"] == "flac"):
@@ -109,9 +129,15 @@ def setup_request(data, request_options):
         config_dict["audio_channel_count"] = 2 # might try more later, but I think there's normally just two
         config_dict["enable_separate_recognition_per_channel"] = True
     
-    logger.info("sending file: ", data["file_name"])
+    # TODO not sure if we want to do it this way, but for now allowing user to be set like this
+    # Security relies on the file being uploadable by the user, and keeping that secure, since if so we will only transcribe and then set transcriptions based on real files in the storage
+    # user, which is needed to indicate who to snd transcript when we've finished. Only need uid though
+    if not data.get("user", False):
+        data["user"] = {"uid": data["file_path"].split("/")[1]}
+
+    logger.info("sending file: " + data["filename"])
     # TODO consider sending their config object...though maybe has same results. But either way, check out the options in beta https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.RecognitionConfig
-    logger.info("sending with config", config_dict)
+    logger.info("sending with config" + json.dumps(config_dict))
     
     request = {
         "audio": audio,
@@ -123,85 +149,95 @@ def setup_request(data, request_options):
 
 def request_long_running_recognize(request, data, options = {}):
     try:
-        logger.info("options here is", options)
+        user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
+
+        logger.info("options here is: " +  json.dumps(options))
         # this is initial response, not complete transcript yet
-        operation = speech_client.long_running_recognize(audio = request['audio'], config = request['config'])
+        operation_future = speech_client.long_running_recognize(request['config'], request['audio'])
+        # NOTE for some reason operation_future.metadata returns None
+        logger.info("operation name is: " + operation_future.operation.name)
+        metadata = operation_future.operation
+        transaction_name = metadata.name
         # TODO could add polling to operation in meantime and make it a cb instead, to send progress reports
         # https://google-cloud-python.readthedocs.io/en/0.32.0/core/operation.html
         # wait until complete and return
-        result = operation.result()
+        result = operation_future.result()
 
         # Get a Promise re_presentation of the final result of the job
         # this part is async, will not return the final result, will just write it in the db
         # Otherwise, will timeout
         transcription_results = result.results
-        metadata = response.metadata()
-        logger.info ("metadata", metadata)
+        # NOTE this might not be latest metadata, might be data from before it's finished. TODO try calling reload if it's not latest?
             
-        handle_transcript_results(data, transcription_results, metadata["name"] )
+        handle_transcript_results(data, transcription_results, transaction_name)
 
-    except Exception as e:
+    except Exception as error:
         logger.error(traceback.format_exc())
 
         # TODO or maybe try passing in details to the REtry arg?
-        logger.info('Error while doing a long-running request:', error)
+        logger.error('Error while doing a long-running request:')
+        logger.error(error)
         # TODO add back in maybe, but for now keep things simple
-        # if (options["failed_attempts"] < 2):
-        #   # need at least two, one for if internal error, and then if another is for channels 
-        #   options["failed_attempts"] ++ 
+        if (options["failed_attempts"] < 2):
+            # need at least two, one for if internal error, and then if another is for channels 
+            options["failed_attempts"] += 1
+            failures = options["failed_attempts"]
 
-        #   # https://cloud.google.com/speech-to-text/docs/error-messages
-        #   if ([
-        #     "Must use single channel (mono) audio, but WAV header indicates 2 channels.",  # got with fileout.wav. code 3
-        #     "Invalid audio channel count", # got with fileout.flac 
-        #   ].includes(error.details)) {
-        #     # try again with different channel configuration
-        #     
-        #     logger.info("trying again, but with multiple channel configuration.")
-        #     options["multiple_channels"] = True
-        #     logger.info(f"Attempt #: {options['failed_attempts'] + 1}")
-        #     new_request = Helpers.setup_request(data, options)
-        #     Helpers.request_long_running_recognize(new_request, data, options)
+            # https://cloud.google.com/speech-to-text/docs/error-messages
+            if (str(error) in [
+                # got with fileout.wav. code 3 
+                "Must use single channel (mono) audio, but WAV header indicates 2 channels.",  
+                # got with fileout.flac 
+                "400 Invalid audio channel count",
+                ]):
 
-        # elif (error["code"] == 13):
-        #     # this is internal error Error while doing a long-running request: Error: 13 INTERNAL
-        #     # not tested TODO
+                # try again with different channel configuration
+                logger.info("trying again, but with multiple channel configuration.")
+                options["multiple_channels"] = True
+                logger.info(f'Attempt #: {failures + 1}')
+                new_request = setup_request(data, options)
+                request_long_running_recognize(new_request, data, options)
 
-        #     logger.info("internal error, so just trying same thing again")
-        #     logger.info(f"Attempt #: {options["failed_attempts"] + 1}")
-        #     Helpers.request_long_running_recognize(request, data, options)
-        # elif (error["details"] == "WAV header indicates an unsupported format."):
-        #   
-        #     # TODO panic
-        #     # not tested TODO
-        #   }
-        # }
+            elif ("13" in str(error)):
+                # this is internal error Error while doing a long-running request: Error: 13 INTERNAL
+                # not tested TODO
+
+                logger.info("internal error, so just trying same thing again")
+                logger.info(f"Attempt #: {failures + 1}")
+                request_long_running_recognize(request, data, options)
+
+            elif ("WAV header indicates an unsupported format." in str(error)):
+                pass
+                # TODO panic
+                # not tested TODO
 
 # maybe in future, store base64. Not necessary for now though, and we're billed by amount of data is stored here, so bet_ter not to. There's cheaper ways if we want to do this
 def handle_transcript_results(data, results, transaction_name):
     # destructure data object
 	# NOTE this should only have file_path if it was an uploads to storage (ie client didn't send base64)
-    user, file_name, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'file_name', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
+    user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
 
-	# want sorted by file_name so each file is easily grouped, but also timestamped so can support multiple uploads
-    data["created_at"] = datetime.now().strftime("%Y%m%dt%H%M%S")
+	# want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
+    data["created_at"] = datetime.utcnow().strftime("%Y%m%dt%H%M%SZ")
 	# array of objects with single key: "alternatives" which is array as well
 	# need to convert to object_s or arrays only, can't do other custom types like "SpeechRecognitionResult"
     data["utterances"] = results # JSON.parse(JSON.stringify(results))
     data["transaction_id"] = transaction_name # best way to ensure a uid for this transcription
 
 	# could also grab the name of the request (it_s a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
-    docName = f"{file_name}-at-{data['created_at']}"
-    doc_ref = db.collection('users').doc(user["uid"]).collection("transcripts").doc(docName)
+    docName = f"{filename}-at-{data['created_at']}"
+    doc_ref = db.collection('users').document(user["uid"]).collection("transcripts").document(docName)
 
 	# set results into firestore
 	# lodash stuff removes empty keys , which firestore refuses to store
     stripped_data = {k: v for k, v in data.items() if v is not None}
 
+    logger.info("setting data to transcripts")
     doc_ref.set(stripped_data)
 
 	# Some logger stuff
-    logger.info("results: ", results)
+    logger.info("\n Transcript results: \n")
+    logger.info(results)
     for result in results:
         # First alternative is the most probable result
         alternative = result.alternatives[0]
@@ -225,7 +261,7 @@ def handle_transcript_results(data, results, transaction_name):
         storage_ref.file(original_file_path).delete()
 
         # mark upload as finished transcribing
-        untranscribed_uploads_ref = db.collection('users').doc(user["uid"]).collection("untranscribedUploads")
+        untranscribed_uploads_ref = db.collection('users').document(user["uid"]).collection("untranscribedUploads")
         response = untranscribed_uploads_ref.delete()
 
 def handleDbError(err):
@@ -242,7 +278,7 @@ def makeItFlac(data, options = {}):
 
 """
 	try {
-	  {file_name, file_type, file_path } = data
+	  {filename, file_type, file_path } = data
 
 		  # if (file_type !== "audio/flac") {
 		  if (file_type !== "video/mp4") {
@@ -250,16 +286,16 @@ def makeItFlac(data, options = {}):
 		    logger.info('not converting to a flac.')
 		    return null
 		  }
-	  logger.info("flacify it", file_name)
+	  logger.info("flacify it", filename)
 		  
 		  # Download file from bucket.
 		  //bucket = gcs.bucket(fileBucket)
 	  bucket = admin.storage().bucket()
-		  temp_file_path = path.join(os.tmpdir(), file_name)
+		  temp_file_path = path.join(os.tmpdir(), filename)
 		  # We add a '_output.flac' suffix to target audio file name. That's where we'll upload the converted audio.
-		  target_temp_file_name = file_name.replace(/\.[^/.]+$/, '') + '_output.flac'
-		  target_temp_file_path = path.join(os.tmpdir(), target_temp_file_name)
-		  target_storage_file_path = path.join(path.dirname(file_path), target_temp_file_name)
+		  target_temp_filename = filename.replace(/\.[^/.]+$/, '') + '_output.flac'
+		  target_temp_file_path = path.join(os.tmpdir(), target_temp_filename)
+		  target_storage_file_path = path.join(path.dirname(file_path), target_temp_filename)
 		  
 		  bucket.file(file_path).download({destination: temp_file_path})
 		  logger.info('Audio downloaded locally to', temp_file_path)
@@ -297,7 +333,7 @@ def makeItFlac(data, options = {}):
 		  fs.unlinkSync(temp_file_path)
 		  fs.unlinkSync(target_temp_file_path)
 
-	  data["converted_file_name"] = target_temp_fileName
+	  data["converted_filename"] = target_temp_fileName
 	  data["original_file_type"] = file_type
 	  data["file_type"] = "audio/flac"
 	  # need both file_path and original file path since need to delete both once we're done
@@ -312,18 +348,20 @@ def makeItFlac(data, options = {}):
 
 """
 
-def download_file(source_file_name): 
-    blob = bucket.blob(source_file_name)
-    # blob.download_to_file_name(destination_file_name)
+# maybe use later
+def download_file(source_filename): 
+    blob = bucket.blob(source_filename)
+    # blob.download_to_filename(destination_filename)
 
     logger.info(
         "Blob {} downloaded to {}.".format(
-            source_file_name, destination_file_name
+            source_filename, destination_filename
         )
     )
+    logger.info(f'blob here: {blob}')
   # file_path = object["name"]; # File path in the bucket.
   # content_type = object["content_type"]
-  # file_name = path["basename"](file_path)
+  # filename = path["basename"](file_path)
 
   # # Exit if this is triggered on a file that is not an image.
   # if (!content_type.startsWith('audio/') && !content_type == 'video/mp4') {
@@ -335,7 +373,7 @@ def download_file(source_file_name):
   #   file_path, 
   #   # various metadata
   #   file_type: content_type,
-  #   file_name,
+  #   filename,
   #   file_last_modified: object["metadata"]["file_last_modified"], 
   #   file_size: object["size"],
   #   file_type: content_type, 
@@ -350,3 +388,8 @@ def download_file(source_file_name):
 
   # return "great job"
 
+def poll_operation(operation_future):
+    """
+    takes google operation future and keeps polling it until complete
+    """
+    

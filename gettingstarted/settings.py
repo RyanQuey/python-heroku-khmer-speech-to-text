@@ -174,9 +174,11 @@ if os.environ.get('DJANGO_ENV') is not "PRODUCTION":
     ENV = "development"
 
     CORS_ORIGIN_WHITELIST = (
-        "localhost", 
-        "www.local.test", # what I use when puttying into server
-        "khmer-speech-to-text.appspot.com", # TODO test, not sure if this works yet
+            "http://localhost:3000", 
+            "http://www.local.test:3000", # what I use when puttying into server
+            "http://www.local.dev:3000", # what I use when puttying into server
+            "http://192.168.56.12:3000", # what I use when puttying into server
+            "https://khmer-speech-to-text.appspot.com", # TODO test, not sure if this works yet
     )
 # django_heroku.settings(locals(), logging=False)
 django_heroku.settings(locals())
