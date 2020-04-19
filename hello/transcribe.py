@@ -151,7 +151,7 @@ def setup_request(data, request_options):
 def request_long_running_recognize(request, data, options = {}):
     logger.info("----------------------------------------------------------------" + service_account)
     logger.info("----------------------------------------------------------------" + service_account)
-    logger.info("which one is it??\n" + service_account)
+    logger.info(f"Attempt # {options['failed_attempts'] + 1}")
     try:
         user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
 
@@ -198,6 +198,8 @@ def request_long_running_recognize(request, data, options = {}):
                 # try again with different channel configuration
                 logger.info("trying again, but with multiple channel configuration.")
                 options["multiple_channels"] = True
+                logger.info("-------------------------------------------------------------------------------------------")
+                logger.info("-------------------------------------------------------------------------------------------")
                 logger.info(f'Attempt #: {failures + 1}')
                 new_request = setup_request(data, options)
                 request_long_running_recognize(new_request, data, options)
@@ -223,7 +225,8 @@ def handle_transcript_results(data, results, transaction_name):
 
     # prepare to send to firestore
 	# want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
-    data["created_at"] = datetime.utcnow().strftime("%Y%m%dt%H%M%SZ")
+    # also want it to be easily placeable in a url without any difficulty
+    data["created_at"] = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
 	# array of objects with single key: "alternatives" which is array as well
 	# need to convert to object_s or arrays only, can't do other custom types like "SpeechRecognitionResult"
     data["transaction_id"] = transaction_name # best way to ensure a uid for this transcription
@@ -247,13 +250,8 @@ def handle_transcript_results(data, results, transaction_name):
                     }
             logger.info(alt_dict)
             result_dict["alternatives"].append(alt_dict)
-            mapped_results.append(result_dict)
-                #     logger.info("looking at alternative: " + i_a)
-                #     logger.info(alternative)
-                #     uni_str = u"Transcript: {}".format()
-                #     # TODO NOTE now working on this, not sure why it is returning ' TypeError: 'str' object does not support item assignment'. Logs only show if loop finishes I guess, so can comment out following line to see logs
-                #     cleaned_data[k][i_r][i_a] = uni_str
-                #     logger.info("setting alternative :" + uni_str)
+
+        mapped_results.append(result_dict)
 
     data["utterances"] = mapped_results
     logger.info("setting data to transcripts")
