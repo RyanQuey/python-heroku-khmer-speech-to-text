@@ -7,7 +7,6 @@ from firebase_admin import storage
 from firebase_admin import firestore
 from google.cloud import speech_v1p1beta1
 from google.cloud.speech_v1p1beta1 import enums
-from IPython import embed
 
 
 from datetime import datetime
@@ -51,11 +50,12 @@ WHITE_LISTED_USERS = [
 ]
 
 # note: not all flietypes supported yet. E.g., mp4 might end up being under flac or something. Eventually, handle all file types and either convert file or do something
-FILE_TYPES = ["flac", "mp3", "wav"] 
+# mpeg is often mp3
+FILE_TYPES = ["flac", "mp3", "wav", "mpeg"] 
 file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
 
 # Setup firebase admin sdk
-isDev = settings.ENV == "development"
+isDev = settings.ENV == "DEVELOPMENT"
 
 base_config = {
 	"encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -117,7 +117,7 @@ def setup_request(data, request_options):
     elif (request_options["file_extension"] == "wav"):
         config_dict = wav_config
     
-    elif (request_options["file_extension"] == "mp3"):
+    elif (request_options["file_extension"] in ["mp3", "mpeg"]):
         # strangely enough, if send base64 of mp3 file, but use flac_config, returns results like the flac file, but smaller file size. In part, possibly due ot the fact that there is multiple speakers set for flacConfig currently
         config_dict = mp3_config
     
@@ -157,6 +157,7 @@ def request_long_running_recognize(request, data, options = {}):
 
         logger.info("options here is: " +  json.dumps(options))
         # this is initial response, not complete transcript yet
+        # TODO handle if there's no file there, ie it got deleted but they request again or something
         operation_future = speech_client.long_running_recognize(request['config'], request['audio'])
         # NOTE for some reason operation_future.metadata returns None
         logger.info("operation name is: " + operation_future.operation.name)
@@ -282,26 +283,34 @@ def handle_transcript_results(data, results, transaction_name):
 	# cleanup storage and db records
 	# TODO add error handling if fail to delete, so that it is marked as not deleted. Perhaps a separate try/catch so we know this is what fails, and not something after.
 	# Or alternatively, something that tracks each ste_p and marks the last completed ste_p so we know where something stopped and can pick it up later/try again later
-    """
-    TODO add this back in to clean up files after uploading
-    if (file_path):
-        # delete file from cloud storage (bucket assigned in the admin initializeApp call)
-        storage_ref = admin.storage().bucket()
 
-        logger.info("yes delete")
-        storage_ref.file(file_path).delete()
+    for path in [file_path, original_file_path]:
+        if (path):
+            # delete file from cloud storage (bucket assigned in the admin initializeApp call)
 
-    if (original_file_path):
-        # delete file from cloud storage (bucket assigned in the admin initializeApp call)
-        storage_ref = admin.storage().bucket()
+            logger.info("deleting file from " + path)
+            bucket.blob(path).delete()
+            logger.info("deleted file from " + path)
 
-        logger.info("yes delete original too")
-        storage_ref.file(original_file_path).delete()
+    # mark upload as finished transcribing
+    stripped_filename = filename.replace(".", "")
+    identifier = f"{stripped_filename}-lastModified{file_last_modified}"
+    untranscribed_uploads_ref = db.collection('users').document(user["uid"]).collection("untranscribedUploads").document(identifier)
+    logger.info("deleting record of untranscribed upload: " + f"users/{user['uid']}/untranscribedUploads/{identifier}")
+    documentZ = untranscribed_uploads_ref.get()
+    if documentZ.exists:
+        logger.info("here it is")
+        logger.info(documentZ.to_dict())
+    else:
+        logger.info("nothing here")
 
-        # mark upload as finished transcribing
-        untranscribed_uploads_ref = db.collection('users').document(user["uid"]).collection("untranscribedUploads")
-        response = untranscribed_uploads_ref.delete()
-        """
+    response = untranscribed_uploads_ref.delete()
+    logger.info("deleted record of untranscribed upload...since it's uploaded")
+    logger.info(response)
+
+
+
+
 
 def handleDbError(err):
 	# see ht_tps://stackoverflow.com/questions/52207155/firestore-admin-in-node-js-missing-or-insufficient-permissions
@@ -328,15 +337,13 @@ def makeItFlac(data, options = {}):
 	  logger.info("flacify it", filename)
 		  
 		  # Download file from bucket.
-		  //bucket = gcs.bucket(fileBucket)
-	  bucket = admin.storage().bucket()
 		  temp_file_path = path.join(os.tmpdir(), filename)
 		  # We add a '_output.flac' suffix to target audio file name. That's where we'll upload the converted audio.
 		  target_temp_filename = filename.replace(/\.[^/.]+$/, '') + '_output.flac'
 		  target_temp_file_path = path.join(os.tmpdir(), target_temp_filename)
 		  target_storage_file_path = path.join(path.dirname(file_path), target_temp_filename)
 		  
-		  bucket.file(file_path).download({destination: temp_file_path})
+		  bucket.blob(file_path).download({destination: temp_file_path})
 		  logger.info('Audio downloaded locally to', temp_file_path)
 		  # Convert the audio to mono channel using FFMPEG.
 		  

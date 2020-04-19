@@ -1,5 +1,7 @@
 django
 gunicorn
 django-heroku
+django-cors-headers
 google-cloud-speech==1.3.2
 firebase-admin==4.0.1
+

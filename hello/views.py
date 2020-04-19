@@ -57,6 +57,7 @@ def db(request):
     return render(request, "db.html", {"greetings": greetings})
 
 # not receiving these requests from the browser, so skipping. TODO or am I?
+# TODO might not need this since doing the csrf host whitelisting
 @csrf_exempt
 def transcribe(request): 
     """
@@ -80,19 +81,16 @@ def transcribe(request):
         
     	# TODO later, optionally convert file
     	# transcribe
+        logger.info("now returning response")
         response = LogSuccessResponse(json.dumps({
             "data": data,
             "options_dict": options_dict,
             "request": request,
             }), content_type='application/json')
+        logger.info(response)
+
         return response
     else:
         logger.info(request.method)
         html = f"<html><body>Wasn't a post....</body></html>"
         return HttpResponse(html)
-
-
-
-    # html = f"<html><body>It is now sending something back.</body></html>"
-    # return HttpResponse(html)
-

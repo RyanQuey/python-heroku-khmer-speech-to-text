@@ -22,12 +22,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+        "khmer-speech-to-text.firebaseapp.com",
+        "khmer-speech-to-text.web.app",
+        ]
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -35,13 +39,13 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "hello",
-    "corsheaders",
 ]
 
 MIDDLEWARE = [
+    # make sure is first on list
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -113,29 +117,8 @@ USE_TZ = True
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATIC_URL = "/static/"
 
-CORS_ORIGIN_WHITELIST = (
-    "khmer-speech-to-text.appspot.com", # TODO test, not sure if this works yet
-)
-
 import os
 
-'''
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
-        },
-    },
-}
-'''
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -169,16 +152,35 @@ LOGGING = {
     }
 }
 
-if os.environ.get('DJANGO_ENV') is not "PRODUCTION":
+if os.environ.get('DJANGO_ENV') != "PRODUCTION":
     DEBUG = True
-    ENV = "development"
+    ENV = "DEVELOPMENT"
 
-    CORS_ORIGIN_WHITELIST = (
+    CORS_ORIGIN_WHITELIST = [
+            # various local servers
             "http://localhost:3000", 
-            "http://www.local.test:3000", # what I use when puttying into server
-            "http://www.local.dev:3000", # what I use when puttying into server
-            "http://192.168.56.12:3000", # what I use when puttying into server
-            "https://khmer-speech-to-text.appspot.com", # TODO test, not sure if this works yet
-    )
-# django_heroku.settings(locals(), logging=False)
+            "http://www.local.test:3000", 
+            "http://www.local.dev:3000", 
+            "http://192.168.56.101:3000", 
+            ]
+    # TODO test this 
+    CSRF_TRUSTED_ORIGINS = [
+            "localhost:3000", 
+            "www.local.test:3000", 
+            "www.local.dev:3000", 
+            "192.168.56.101:3000", 
+            ]
+
+else:
+    ENV = "PRODUCTION"
+    CORS_ORIGIN_WHITELIST = [
+            "https://khmer-speech-to-text.web.app", # TODO test, not sure if this works yet
+            "https://khmer-speech-to-text.firebaseapp.com",
+            ]
+    CSRF_TRUSTED_ORIGINS = [
+            "khmer-speech-to-text.web.app", # TODO test, not sure if this works yet
+            "khmer-speech-to-text.firebaseapp.com",
+            ]
+
+
 django_heroku.settings(locals())
