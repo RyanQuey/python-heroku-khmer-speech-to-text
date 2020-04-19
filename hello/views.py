@@ -31,8 +31,6 @@ class LogSuccessResponse(HttpResponse):
         super(LogSuccessResponse, self).close()
 
         # do whatever you want, this is the last codepoint in request handling
-        logger.info("starting long request")
-        logger.info(self.content)
         all_of_it = self.getvalue()
         my_json = json.loads(all_of_it)
         data = my_json["data"]
@@ -40,7 +38,7 @@ class LogSuccessResponse(HttpResponse):
         options_dict = my_json["options_dict"]
         request_long_running_recognize(request, data, options_dict)
 
-        logger.info("all done calling it at least")
+        logger.info("all done transcribing and setting and cleaning up")
 
 # Create your views here.
 def index(request):
@@ -68,13 +66,8 @@ def transcribe(request):
       url URI for audio file in Cloud Storage, e.g. gs://[BUCKET]/[FILE]
     """
 
-    logger.info("env: " + os.environ.get('DJANGO_ENV'))
-
     if request.method == "POST":
         # data = deepcopy(request.POST)
-        logger.info("raw body")
-
-        logger.info(request.body)
         data = json.loads(request.body)
         # starts with base options and gets mutated over time
         options_dict = deepcopy(BASE_REQUEST_OPTIONS)

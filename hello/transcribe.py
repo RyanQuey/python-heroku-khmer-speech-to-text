@@ -7,6 +7,7 @@ from firebase_admin import storage
 from firebase_admin import firestore
 from google.cloud import speech_v1p1beta1
 from google.cloud.speech_v1p1beta1 import enums
+from IPython import embed
 
 
 from datetime import datetime
@@ -22,12 +23,17 @@ admin_key = os.environ.get('ADMIN_KEY_LOCATION')
 no_role_key = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
 
 # path to service account json file
+# don't need to set the credentials, everything is automatically derived from system GOOGLE_APPLICATION_CREDENTIALS env var. But if need a different credential, can set it 
 service_account = admin_key or no_role_key
-logger.info("which one is it??\n" + service_account)
 cred = credentials.Certificate(service_account)
 firebase_admin.initialize_app(cred, {
-  'storageBucket': f'{BUCKET_NAME}'
+  'storageBucket': BUCKET_NAME,
+  'projectId': APP_NAME,
+  'databaseURL': f"https://{APP_NAME}.firebaseio.com/",
 })
+
+# not sure why, but doing admin.firestore.Client() doesn't work on its own
+db = firestore.Client.from_service_account_json(service_account)
 
 # alias so don't have to write out the beta part
 # for now only using the beta
@@ -50,10 +56,6 @@ file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
 
 # Setup firebase admin sdk
 isDev = settings.ENV == "development"
-
-# for Python, don't need to set the credentials, everything is automatically derived from system GOOGLE_APPLICATION_CREDENTIALS env var
-
-db = firestore.Client()
 
 base_config = {
 	"encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -143,11 +145,13 @@ def setup_request(data, request_options):
         "audio": audio,
         "config": config_dict,
     }
-    
     return request
 
 
 def request_long_running_recognize(request, data, options = {}):
+    logger.info("----------------------------------------------------------------" + service_account)
+    logger.info("----------------------------------------------------------------" + service_account)
+    logger.info("which one is it??\n" + service_account)
     try:
         user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
 
@@ -217,35 +221,71 @@ def handle_transcript_results(data, results, transaction_name):
 	# NOTE this should only have file_path if it was an uploads to storage (ie client didn't send base64)
     user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
 
+    # prepare to send to firestore
 	# want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
     data["created_at"] = datetime.utcnow().strftime("%Y%m%dt%H%M%SZ")
 	# array of objects with single key: "alternatives" which is array as well
 	# need to convert to object_s or arrays only, can't do other custom types like "SpeechRecognitionResult"
-    data["utterances"] = results # JSON.parse(JSON.stringify(results))
     data["transaction_id"] = transaction_name # best way to ensure a uid for this transcription
 
 	# could also grab the name of the request (it_s a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
+    mapped_results = []
+    for result in results:
+        result_dict = {
+            "channel_tag": result.channel_tag,
+            "language_code": result.language_code,
+            "alternatives": [],
+            }
+
+        result_dict["alternatives"] = []
+            #     logger.info("looking at result: " + str(i_r))
+                        
+        for alt in result.alternatives:
+            alt_dict = {
+                    "transcript": u"{}".format(alt.transcript), 
+                    "confidence": alt.confidence
+                    }
+            logger.info(alt_dict)
+            result_dict["alternatives"].append(alt_dict)
+            mapped_results.append(result_dict)
+                #     logger.info("looking at alternative: " + i_a)
+                #     logger.info(alternative)
+                #     uni_str = u"Transcript: {}".format()
+                #     # TODO NOTE now working on this, not sure why it is returning ' TypeError: 'str' object does not support item assignment'. Logs only show if loop finishes I guess, so can comment out following line to see logs
+                #     cleaned_data[k][i_r][i_a] = uni_str
+                #     logger.info("setting alternative :" + uni_str)
+
+    data["utterances"] = mapped_results
+    logger.info("setting data to transcripts")
+
+    cleaned_data = {}
+    for k, v in data.items():
+        # don't set any empty values, since firestore doesn't like it
+        if v is not None:
+            cleaned_data[k] = v
+
+    logger.info("============================================================================================")
+    logger.info("============================================================================================")
+    logger.info(cleaned_data)
+	# set results into firestore
     docName = f"{filename}-at-{data['created_at']}"
     doc_ref = db.collection('users').document(user["uid"]).collection("transcripts").document(docName)
 
-	# set results into firestore
-	# lodash stuff removes empty keys , which firestore refuses to store
-    stripped_data = {k: v for k, v in data.items() if v is not None}
-
-    logger.info("setting data to transcripts")
-    doc_ref.set(stripped_data)
+    doc_ref.set(cleaned_data)
 
 	# Some logger stuff
     logger.info("\n Transcript results: \n")
-    logger.info(results)
+    # logger.info(results)
     for result in results:
         # First alternative is the most probable result
         alternative = result.alternatives[0]
-        logger.info(u"Transcript: {}".format(alternative.transcript))
+        logger.info(u"Transcript for this result: {}".format(alt.transcript))
 
 	# cleanup storage and db records
 	# TODO add error handling if fail to delete, so that it is marked as not deleted. Perhaps a separate try/catch so we know this is what fails, and not something after.
 	# Or alternatively, something that tracks each ste_p and marks the last completed ste_p so we know where something stopped and can pick it up later/try again later
+    """
+    TODO add this back in to clean up files after uploading
     if (file_path):
         # delete file from cloud storage (bucket assigned in the admin initializeApp call)
         storage_ref = admin.storage().bucket()
@@ -263,6 +303,7 @@ def handle_transcript_results(data, results, transaction_name):
         # mark upload as finished transcribing
         untranscribed_uploads_ref = db.collection('users').document(user["uid"]).collection("untranscribedUploads")
         response = untranscribed_uploads_ref.delete()
+        """
 
 def handleDbError(err):
 	# see ht_tps://stackoverflow.com/questions/52207155/firestore-admin-in-node-js-missing-or-insufficient-permissions
