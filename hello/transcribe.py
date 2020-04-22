@@ -312,13 +312,6 @@ def handle_transcript_results(data, results, transaction_name):
 
 
 
-def handleDbError(err):
-	# see ht_tps://stackoverflow.com/questions/52207155/firestore-admin-in-node-js-missing-or-insufficient-permissions
-    if (err["message"].includes("PERMISSION_DENIED: Missing or insufficient permissions")):
-        logger.info("NOTE: check to make sure service account key put into 'admin.credential.cert(serviceAccount)' has firebase-adminsdk role")
-
-    logger.info("Error hitting firestore DB: ", err)
-
 # based on ht_tps://github.com/firebase/functions-samples/blob/master/ffmpeg-convert-audio/functions/index.js
 # TODO might be bet_ter in the future, for more flexibility and ease of use, to just use ffmpeg-static and bash code rather than a wrapper, so can write exactly as it would be in the command line
 def makeItFlac(data, options = {}):
@@ -433,6 +426,12 @@ def download_file(source_filename):
   # })
 
   # return "great job"
+
+# 
+
+# def mark_error_for_request(error_type, user):
+#     docName = f"{filename}-at-{data['created_at']}"
+#     doc_ref = db.collection('users').document(user["uid"]).collection("transcripts").document(docName)
 
 def poll_operation(operation_future):
     """
