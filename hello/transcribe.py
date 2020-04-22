@@ -26,9 +26,9 @@ no_role_key = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
 service_account = admin_key or no_role_key
 cred = credentials.Certificate(service_account)
 firebase_admin.initialize_app(cred, {
-  'storageBucket': BUCKET_NAME,
-  'projectId': APP_NAME,
-  'databaseURL': f"https://{APP_NAME}.firebaseio.com/",
+    'storageBucket': BUCKET_NAME,
+    'projectId': APP_NAME,
+    'databaseURL': f"https://{APP_NAME}.firebaseio.com/",
 })
 
 # not sure why, but doing admin.firestore.Client() doesn't work on its own
@@ -45,8 +45,8 @@ cwd = os.getcwd()
 destination_filename = cwd + "/tmp/"
 
 WHITE_LISTED_USERS = [
-	"rlquey2@gmail.com",
-	"borachheang@gmail.com",
+    "rlquey2@gmail.com",
+    "borachheang@gmail.com",
 ]
 
 # note: not all flietypes supported yet. E.g., mp4 might end up being under flac or something. Eventually, handle all file types and either convert file or do something
@@ -58,28 +58,28 @@ file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
 isDev = settings.ENV == "DEVELOPMENT"
 
 base_config = {
-	"encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
-	"language_code": 'km-KH',
-	"sample_rate_hertz": None, # TODO or try 16000...but None let_s google set it themselves. For some mp3s, this returns no ut_terances or worse results though
-	"enable_automatic_punctuation": True,
-	"model": "default", #  Google: "Best for audio that is not one of the specific audio models. For example, long-form audio. Ideally the audio is high-fidelity, recorded at a 16khz or greater sampling rate."
-	"max_alternatives": 3, # I think it's free, so why not get more ha
+    "encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
+    "language_code": 'km-KH',
+    "sample_rate_hertz": None, # TODO or try 16000...but None let_s google set it themselves. For some mp3s, this returns no ut_terances or worse results though
+    "enable_automatic_punctuation": True,
+    "model": "default", #  Google: "Best for audio that is not one of the specific audio models. For example, long-form audio. Ideally the audio is high-fidelity, recorded at a 16khz or greater sampling rate."
+    "max_alternatives": 3, # I think it's free, so why not get more ha
 }
 
 flac_config = {**base_config, 
-	# or maybe FLAC ?
-	"encoding": enums.RecognitionConfig.AudioEncoding.FLAC,
-	"sample_rate_hertz": None, # NOTE one time, flac file (that was from mp4) had 44100 herz required, so bet_ter to just not set until can find out dynamically
+    # or maybe FLAC ?
+    "encoding": enums.RecognitionConfig.AudioEncoding.FLAC,
+    "sample_rate_hertz": None, # NOTE one time, flac file (that was from mp4) had 44100 herz required, so bet_ter to just not set until can find out dynamically
 }
 
 mp3_config = {**base_config, 
-	"encoding": enums.RecognitionConfig.AudioEncoding.MP3,
-	"sample_rate_hertz": 16000,  # Google's docs say: "When using this encoding, sampleRateHertz has to match the sample rate of the file being used." TODO need to find a way to dynamically test the file to see it_s sample rate hertz
+    "encoding": enums.RecognitionConfig.AudioEncoding.MP3,
+    "sample_rate_hertz": 16000,  # Google's docs say: "When using this encoding, sampleRateHertz has to match the sample rate of the file being used." TODO need to find a way to dynamically test the file to see it_s sample rate hertz
 }
 
 wav_config = {**base_config, 
-	"encoding": None, # The FLAC and WAV audio file format_s include a header that describes the included audio content. You can request recognition for WAV files that contain either LINEAR16 or MULAW encoded audio. If you send FLAC or WAV audio file format in your request, you do not need to specify an AudioEncoding; the audio encoding format is determined from the file header. If you specify an AudioEncoding when you send send FLAC or WAV audio, the encoding configuration must match the encoding described in the audio header; otherwise the request returns an google.rpc.Code.INVALID_ARGUMENT error code.
-	"sample_rate_hertz": None, # NOTE one time, flac file (that was from mp4) had 44100 herz required, so bet_ter to just not set until can find out dynamically
+    "encoding": None, # The FLAC and WAV audio file format_s include a header that describes the included audio content. You can request recognition for WAV files that contain either LINEAR16 or MULAW encoded audio. If you send FLAC or WAV audio file format in your request, you do not need to specify an AudioEncoding; the audio encoding format is determined from the file header. If you specify an AudioEncoding when you send send FLAC or WAV audio, the encoding configuration must match the encoding described in the audio header; otherwise the request returns an google.rpc.Code.INVALID_ARGUMENT error code.
+    "sample_rate_hertz": None, # NOTE one time, flac file (that was from mp4) had 44100 herz required, so bet_ter to just not set until can find out dynamically
 }
 
 # returns the received request body and mutates request_options along the way 
@@ -100,15 +100,15 @@ def setup_request(data, request_options):
         # is in google cloud storage
         
         audio = {
-                "uri": f"gs://khmer-speech-to-text.appspot.com/{data['file_path']}"
-            }
+            "uri": f"gs://khmer-speech-to-text.appspot.com/{data['file_path']}"
+        }
         
         # if no data["file_path"], then there should just be base64
     else:
         # not really testing or using right now
         audio = {
-                "content": data["base64"]
-            }
+            "content": data["base64"]
+        }
 
     
     if (request_options["file_extension"] == "flac"):
@@ -149,8 +149,8 @@ def setup_request(data, request_options):
 
 
 def request_long_running_recognize(request, data, options = {}):
-    logger.info("----------------------------------------------------------------" + service_account)
-    logger.info("----------------------------------------------------------------" + service_account)
+    logger.info("----------------------------------------------------------------")
+    logger.info("----------------------------------------------------------------")
     logger.info(f"Attempt # {options['failed_attempts'] + 1}")
     try:
         user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
@@ -225,14 +225,14 @@ def handle_transcript_results(data, results, transaction_name):
     user, filename, file_type, file_last_modified, file_size, file_path, original_file_path = [data.get(key) for key in ('user', 'filename', 'file_type', 'file_last_modified', 'file_size', 'file_path', 'original_file_path')]
 
     # prepare to send to firestore
-	# want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
+    # want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
     # also want it to be easily placeable in a url without any difficulty
     data["created_at"] = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-	# array of objects with single key: "alternatives" which is array as well
-	# need to convert to object_s or arrays only, can't do other custom types like "SpeechRecognitionResult"
+    # array of objects with single key: "alternatives" which is array as well
+    # need to convert to object_s or arrays only, can't do other custom types like "SpeechRecognitionResult"
     data["transaction_id"] = transaction_name # best way to ensure a uid for this transcription
 
-	# could also grab the name of the request (it_s a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
+    # could also grab the name of the request (it_s a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
     mapped_results = []
     for result in results:
         result_dict = {
@@ -266,15 +266,15 @@ def handle_transcript_results(data, results, transaction_name):
     logger.info("============================================================================================")
     logger.info("============================================================================================")
     logger.info(cleaned_data)
-	# set results into firestore
+
+    # set results into firestore
     docName = f"{filename}-at-{data['created_at']}"
     doc_ref = db.collection('users').document(user["uid"]).collection("transcripts").document(docName)
 
     doc_ref.set(cleaned_data)
 
-	# Some logger stuff
+    # Some logger stuff
     logger.info("\n Transcript results: \n")
-    # logger.info(results)
     for result in results:
         # First alternative is the most probable result
         alternative = result.alternatives[0]

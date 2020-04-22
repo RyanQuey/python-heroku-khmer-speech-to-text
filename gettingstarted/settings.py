@@ -110,7 +110,6 @@ USE_L10N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.0/howto/static-files/
 
@@ -157,19 +156,19 @@ if os.environ.get('DJANGO_ENV') != "PRODUCTION":
     ENV = "DEVELOPMENT"
 
     CORS_ORIGIN_WHITELIST = [
-            # various local servers
-            "http://localhost:3000", 
-            "http://www.local.test:3000", 
-            "http://www.local.dev:3000", 
-            "http://192.168.56.101:3000", 
-            ]
+        # various local servers
+        "http://localhost:3000", 
+        "http://www.local.test:3000", 
+        "http://www.local.dev:3000", 
+        "http://192.168.56.101:3000", 
+        ]
     # TODO test this 
     CSRF_TRUSTED_ORIGINS = [
-            "localhost:3000", 
-            "www.local.test:3000", 
-            "www.local.dev:3000", 
-            "192.168.56.101:3000", 
-            ]
+        "localhost:3000", 
+        "www.local.test:3000", 
+        "www.local.dev:3000", 
+        "192.168.56.101:3000", 
+        ]
 
 else:
     ENV = "PRODUCTION"
@@ -181,6 +180,5 @@ else:
             "khmer-speech-to-text.web.app", # TODO test, not sure if this works yet
             "khmer-speech-to-text.firebaseapp.com",
             ]
-
 
 django_heroku.settings(locals())
