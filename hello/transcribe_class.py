@@ -1,120 +1,4 @@
-import os
-import asyncio
-from django.conf import settings
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import storage
-from firebase_admin import firestore
-from google.cloud import speech_v1p1beta1
-from google.cloud.speech_v1p1beta1 import enums
-from datetime import datetime
-# experiment with logging
-import traceback
-import logging
-import json
-from copy import deepcopy
-
-# TODO get all these constants to somewhere else and import them
-# probably grab some of the class vars too eg _base_config
-APP_NAME = "khmer-speech-to-text"
-BUCKET_NAME = "khmer-speech-to-text.appspot.com"
-logger = logging.getLogger('testlogger')
-admin_key = os.environ.get('ADMIN_KEY_LOCATION')
-no_role_key = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-
-# path to service account json file
-# don't need to set the credentials, everything is automatically derived from system GOOGLE_APPLICATION_CREDENTIALS env var. But if need a different credential, can set it 
-service_account = admin_key or no_role_key
-cred = credentials.Certificate(service_account)
-firebase_admin.initialize_app(cred, {
-    'storageBucket': BUCKET_NAME,
-    'projectId': APP_NAME,
-    'databaseURL': f"https://{APP_NAME}.firebaseio.com/",
-})
-
-# not sure why, but doing admin.firestore.Client() doesn't work on its own
-db = firestore.Client.from_service_account_json(service_account)
-
-# alias so don't have to write out the beta part
-# for now only using the beta
-speech = speech_v1p1beta1
-speech_client = speech.SpeechClient.from_service_account_json(service_account)
-
-bucket = storage.bucket()
-
-cwd = os.getcwd()
-destination_filename = cwd + "/tmp/"
-
-WHITE_LISTED_USERS = [
-    "rlquey2@gmail.com",
-    "borachheang@gmail.com",
-]
-
-# note: not all flietypes supported yet. E.g., mp4 might end up being under flac or something. Eventually, handle all file types and either convert file or do something
-# mpeg is often mp3
-FILE_TYPES = ["flac", "mp3", "wav", "mpeg"] 
-file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
-
-# Setup firebase admin sdk
-isDev = settings.ENV == "DEVELOPMENT"
-
-REQUEST_TYPES = [
-    "initial-request", 
-    "continue-transcribing-request",
-]
-
-APIS = ["v1", "v1p1beta"]
-BASE_REQUEST_OPTIONS = {
-  # maybe better to ask users to stop doing multiple channels, unless it actually helps
-  "multiple_channels": False, 
-  "api": APIS[1],
-  "failed_attempts": 0, # TODO move to diff dict, since it's not an option
-}
-
-TRANSCRIPTION_STATUSES = [
-    # 0 
-    # the first stage, before this no reason to bother even recording
-    # client sets
-    "uploading",
-
-    # 1
-    # finished upload
-    # client sets
-    "uploaded",
-
-    # 2
-    # when request has been received and accepted by our server, and is processing the file
-    # server sets
-    "received-by-server", 
-
-    # 3
-    # when Google has started the operation to transcribe the file, and is currently transcribing.   
-    # server sets
-    "transcribing", 
-
-    # 4
-    # Google finished transcribing, but we haven't yet processed their transcription for whatever reason
-    "transcription-complete",
-
-    # 5
-    # we finished processing their transcription, and it is stored in firestore
-    # actually were not really persisting when it gets here, just deleting the transcribe request record
-    "transcription-processed",
-
-    # 6
-    # when request had been received and accepted by our server, but then we errored before beginning the translation through google
-    # server sets
-    "server-error", 
-
-    # 7
-    # when Google had started the operation to transcribe the file, but then Google had some sort of error
-    # client sets or server sets (if server had crashed and didn't get a chance to set it by itself)
-    "transcribing-error", 
-
-]
-
-
-
+from .helpers import * 
 
 class TranscribeRequest:
     """
@@ -137,6 +21,10 @@ class TranscribeRequest:
         """
         file_data should be dictionary with file data
         called initially, but also when refreshing data based on the database
+
+        TODO eventually add performance loggers like "uploaded_at", "transcribed_at"
+        If there is an error, need to account for the errored_while when running stats. So if errored while transcribing, count from 
+        If there are multiple errors, throw out from stats altogether
         """
 
         self.filename = file_data["filename"]
@@ -144,6 +32,7 @@ class TranscribeRequest:
 
         # optional data from payload 
         # TODO test how optional all of this is
+        # TODO DRY up using setattr
         # either user and/or user_id or file_path need to be set
         self.request_type = file_data.get("request_type", REQUEST_TYPES[0])
         self.user = file_data.get("user", {"uid": file_data["user_id"]})
@@ -153,11 +42,21 @@ class TranscribeRequest:
         self.file_extension = self.file_type.replace("audio/", "")
         self.file_size = file_data.get("file_size")
         self.original_file_path = file_data.get("original_file_path") 
-        self.status = None # get when retrieve record from firestore
+        self.transaction_id = file_data.get("file_path")
+
+        self.status = file_data.get("status") 
+        self.uploaded_at = file_data.get("uploaded_at") 
+        self.server_received_at = file_data.get("server_received_at") 
+        self.file_processed_at = file_data.get("file_processed_at") 
+        self.transcript_completed_at = file_data.get("transcript_completed_at") 
+        self.transcript_processed_at = file_data.get("transcript_processed_at") 
+        self.error = file_data.get("error", None) 
+        self.errored_while = file_data.get("errored_while") 
+        # set because if multiple errors, just not bothering to use this transcribe request for performance metrics
+        self.multiple_errors = file_data.get("multiple_errors") 
         # only counting attempts in this current http request, so always set to 0
         self.failed_attempts = 0
         # received from google when started already
-        self.transaction_id = file_data.get("file_path")
         self._set_request_options()
 
     def _set_request_options(self, **kwargs):
@@ -180,7 +79,7 @@ class TranscribeRequest:
         return identifier
 
     def transcript_document_name(self):
-        return f"{self.filename}-at-{self.transcript_created_at}"
+        return f"{self.filename}-at-{self.transcript_completed_at}"
 
     def user_ref(self):
         return db.collection('users').document(self.user["uid"])
@@ -265,12 +164,12 @@ class TranscribeRequest:
             # TODO consider sending their config object...though maybe has same results. But either way, check out the options in beta https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.RecognitionConfig
             logger.info("sending with config" + json.dumps(config_dict))
             
-            requestParams = {
+            request_params = {
                 "audio": audio,
                 "config": config_dict,
             }
 
-            self.requestParams = requestParams
+            self.request_params = request_params
 
         except Exception as error:
             # mark request status in firestore 
@@ -354,11 +253,10 @@ class TranscribeRequest:
         # want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
         # also want it to be easily placeable in a url without any difficulty
         # TODO put in function that first finds out that Google speech api is finished
-        self.transcript_created_at = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
         # array of objects with single key: "alternatives" which is array as well
         # need to convert to objects or arrays only, can't do other custom types like "SpeechRecognitionResult"
 
-        # could also grab the name of the request (it_s a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
+        # could also grab the name of the request (it's a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
         data = self.__dict__
 
         mapped_results = []
@@ -480,10 +378,12 @@ class TranscribeRequest:
 
     #############################
     # status marking methods (for persisting in firestore)
+    # TODO DRY this up. Can just persist the whole instance to firestore.
     #############################
     def mark_as_received(self):
-        self._update_status(TRANSCRIPTION_STATUSES[2]) # received-by-server
-        pass
+        self._update_status(TRANSCRIPTION_STATUSES[2], other={ # processing-file
+            "server_received_at": timestamp()
+        }) 
 
     def mark_as_transcribing(self, operation_future):
         """
@@ -492,24 +392,21 @@ class TranscribeRequest:
 
         logger.info("operation name is: " + operation_future.operation.name)
         metadata = operation_future.operation
-        self.transaction_id = metadata.name
 
         # https://google-cloud-python.readthedocs.io/en/0.32.0/core/operation.html
-        self._update_status(TRANSCRIPTION_STATUSES[3], { # transcribing
-            "transaction_id": self.transaction_id,
+        self._update_status(TRANSCRIPTION_STATUSES[3], other={ # transcribing
+            "transaction_id": metadata.name,
+            "file_processed_at": timestamp(),
         }) 
-        pass
 
     def mark_as_transcribed(self):
-        self._update_status(TRANSCRIPTION_STATUSES[4]) # transcription-complete
-        pass
+
+        self._update_status(TRANSCRIPTION_STATUSES[4], other={
+            "transcript_completed_at": timestamp(),
+        }) # processing-transcription
 
     def mark_as_processed(self):
-        """
-        delete the record, now should have a transcript already so no need for this
-        """
-
-        logger.info("deleting record of untranscribed upload: " + f"users/{self.user['uid']}/transcribeRequests/{identifier}")
+        # logger.info("deleting record of untranscribed upload: " + f"users/{self.user['uid']}/transcribeRequests/{identifier}")
 
         transcribe_request_ref = self.transcribe_request_ref()
 
@@ -517,37 +414,47 @@ class TranscribeRequest:
         response = transcribe_request_ref.delete()
         logger.info("deleted record of untranscribed upload...since it's uploaded")
         logger.info(response)
+        self._update_status(TRANSCRIPTION_STATUSES[5], other={
+            "transcript_processed_at": timestamp(),
+        }) # processing-transcription
+
 
     def mark_as_server_error(self, error):
         logger.error("Marking as Server error")
         logger.error(error)
-        self.errored_while = self._get_errored_while()
         self._update_status(TRANSCRIPTION_STATUSES[6], other={
             "error": str(error),
-            "errored_while": self.errored_while,
+            "errored_while": self._get_errored_while(),
+            "errored_at": timestamp(),
+            "multiple_errors": True if self.error else False
         }) # server-error 
-        pass
 
     # keep separate from server error for now, I think they are different enough that we want to handle differently more and more as this server is built out
     def mark_as_transcribing_error(self, error):
+        logger.error("Marking as Transcription error")
         logger.error(error)
-        self.errored_while = self._get_errored_while()
         self._update_status(TRANSCRIPTION_STATUSES[7], other={
             "error": str(error),
-            "errored_while": self.errored_while,
+            "errored_while": self._get_errored_while(),
+            "errored_at": timestamp(),
+            "multiple_errors": True if self.error else False
         }) # transcribing-error 
         pass
 
+    
     def _update_status(self, status, **kwargs):
         other = kwargs.get("other", {})
         """
         set the status without overwriting anything else
+        better to not merge but just update the whole thing to db
+        if do so, set properties we don't want to persist as not properties but retrievable by method, like request options
         """
-        if other == None:
-            other = {}
 
-        # update self
+        # update self in the current TranscribeRequest
         self.status = status
+        for key in other:
+            setattr(self, key, other[key])
+
         updates = {
             **other, 
             "status": status,
@@ -569,7 +476,7 @@ class TranscribeRequest:
     # sample rate hertz:  
     # - None lets google set it themselves. 
     # - For some mp3s, this returns no utterances or worse results though
-    # - Regarding MP3s, Google's docs say: "When using this encoding, sampleRateHertz has to match the sample rate of the file being used." TODO need to find a way to dynamically test the file to see it_s sample rate hertz
+    # - Regarding MP3s, Google's docs say: "When using this encoding, sampleRateHertz has to match the sample rate of the file being used." TODO need to find a way to dynamically test the file to see its sample rate hertz
 
     # model:  
     # - Google: "Best for audio that is not one of the specific audio models. For example, long-form audio. Ideally the audio is high-fidelity, recorded at a 16khz or greater sampling rate."

@@ -16,5 +16,6 @@ import hello.views
 
 urlpatterns = [
     path("request-transcribe/", hello.views.transcribe, name="transcribe"),
+    path("resume-request/", hello.views.resume_request, name="resume-request"),
     path("admin/", admin.site.urls),
 ]
