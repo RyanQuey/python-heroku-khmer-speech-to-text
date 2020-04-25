@@ -106,11 +106,14 @@ def resume_request(req):
 
         # check to see current status
         transcribe_request.refresh_from_db()
-        status = transcribe_request.status()
+        status = transcribe_request.status
         logger.info("Status is: " + status)
 
+        if transcribe_request.last_request_has_stopped() == False:
+            message = "Please wait a little longer before requesting"
+
         # TODO need to import this constant
-        if status == TRANSCRIPTION_STATUSES[0]: # uploading
+        elif status == TRANSCRIPTION_STATUSES[0]: # uploading
             # whoops...shouldn't be here!
             # check if there is a file and storage, then restart if there is
             # if there isn't, tell client to prompt reupload
@@ -123,11 +126,11 @@ def resume_request(req):
             # TODO 
             message = "Not yet handling "
 
-        elif status == TRANSCRIPTION_STATUSES[2]: # server-received
+        elif status == TRANSCRIPTION_STATUSES[2]: # processing-file (aka server has received)
             # check updated_at, then restart if too long ago
             # note that this stage often takes a while, since sometimes it means converting large files from one format to flac
             # TODO 
-            message = "Not yet handling "
+            message = _setup_and_transcribe_again(transcribe_request)
 
 
         elif status == TRANSCRIPTION_STATUSES[3]: # transcribing
@@ -138,7 +141,7 @@ def resume_request(req):
             # TODO 
             message = "Not yet handling "
 
-        elif status == TRANSCRIPTION_STATUSES[4]: # "transcription-complete"
+        elif status == TRANSCRIPTION_STATUSES[4]: # "processing-transcription" (means that transcription is complete)
             # TODO 
             message = "Not yet handling "
 
@@ -147,28 +150,12 @@ def resume_request(req):
             message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[6]: # server-error
-            # go through and make sure to mark as received if not already
-            if transcribe_request.server_received_at == None:
-                transcribe_request.mark_as_received()
-
-            # check to see if transcribing already by checking if we have a transaction ID. Maybe we errored while processing, and so can try to not have to request from google a second time, and just wait
-            if transcribe_request.transaction_id == None: 
-                # setup the request again
-                transcribe_request.setup_request()
-                transcribe_request.request_long_running_recognize()
-
-                message = "Starting to ask Google for transcription again"
-
-            else:
-                # check status, if done then can return finished transcription
-                # TODO 
-                message = "Everything is fine, just waiting for Google to transcribe"
-
+            message = _setup_and_transcribe_again(transcribe_request)
 
         elif status == TRANSCRIPTION_STATUSES[7]: # transcribing-error
             # try transcribing again, unless error requires changing the file or options first
-            # TODO 
-            message = "Not yet handling "
+            # TODO setup to handle different errors from Google. For now, just handling as any other error
+            message = _setup_and_transcribe_again(transcribe_request)
 
         return HttpResponse(json.dumps({
             "message": message
@@ -205,8 +192,38 @@ def _log_error(error, transcribe_request):
     logger.error(traceback.format_exc())
     # TODO move this error handling to more granular handling so can handle better. Don't do it here.
     if transcribe_request:
-        transcribe_request.mark_as_server_error(error)
+        if "error" not in transcribe_request.status:
+            transcribe_request.mark_as_server_error(error)
+        else:
+            # assuming already handled...TODO find better way to check if already handled, since it's possible that this error is from last time
+            pass
     else:
         logger.info("no transcribe_request instance instantiated yet; leaving error logging to the client")
 
-    return HttpResponseServerError("Server errored out during transcription")
+    return HttpResponseServerError("Server errored out during transcription request")
+
+def _setup_and_transcribe_again(transcribe_request):
+    # go through and make sure to mark as received if not already
+    if transcribe_request.server_has_received() == False:
+        transcribe_request.mark_as_received()
+
+    # check to see if transcribing already by checking if we have a transaction ID. Maybe we errored while processing, and so can try to not have to request from google a second time, and just wait
+    logger.info("checknig transaction id")
+    if transcribe_request.transaction_id == None: 
+        # setup the request again
+        logger.info("now setting up ")
+        transcribe_request.setup_request()
+        transcribe_request.request_long_running_recognize()
+
+        message = "Starting to ask Google for transcription again"
+
+    else:
+        logger.info("well then what is it? {}".format(transcribe_request.transaction_id))
+        # check status, if done then can return finished transcription
+        # TODO 
+        message = "Everything is fine, just waiting for Google to transcribe"
+
+
+
+    logger.info("returning message now")
+    return message

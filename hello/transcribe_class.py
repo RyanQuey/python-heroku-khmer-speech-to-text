@@ -29,12 +29,15 @@ class TranscribeRequest:
 
         self.filename = file_data["filename"]
         self.file_last_modified = file_data["file_last_modified"]
+        self.id = file_data["id"]
 
         # optional data from payload 
         # TODO test how optional all of this is
-        # TODO DRY up using setattr
+        # TODO DRY up using setattr and some sort of schema dict
         # either user and/or user_id or file_path need to be set
         self.request_type = file_data.get("request_type", REQUEST_TYPES[0])
+        # TODO if this doesn't work could try like self.user = {"uid": self.file_path.split("/")[1]}
+        # Security relies on the file being uploadable by the user, and keeping that secure, since if so we will only transcribe and then set transcriptions based on real files in the storage
         self.user = file_data.get("user", {"uid": file_data["user_id"]})
         self.file_path = file_data.get("file_path")
         self.file_type = file_data.get("content_type")
@@ -42,8 +45,10 @@ class TranscribeRequest:
         self.file_extension = self.file_type.replace("audio/", "")
         self.file_size = file_data.get("file_size")
         self.original_file_path = file_data.get("original_file_path") 
-        self.transaction_id = file_data.get("file_path")
+        self.transaction_id = file_data.get("transaction_id")
         self.event_logs = self.get_event_logs()
+        self.status = file_data.get("status")
+        self.updated_at = file_data.get("updated_at")
 
         # only counting attempts in this current http request, so always set to 0
         self.failed_attempts = 0
@@ -55,7 +60,7 @@ class TranscribeRequest:
         self.request_options[self.file_extension] = True
 
     #######################
-    # getters/getter helpers
+    # getters/translators for getters
     ########################
 
     def attempt_count(self):
@@ -82,8 +87,83 @@ class TranscribeRequest:
     def transcribe_request_ref(self):
         return self.user_ref().collection("transcribeRequests").document(self.id)
 
-    def status(self):
-        return this.event_log[-1]
+    def size_in_MB(self):
+        return float(self.file_size) / 1048576
+    ##################
+    # status checkers
+    ##################
+
+    def server_has_received(self):
+        if any(log.get("event") == TRANSCRIPTION_STATUSES[2] for log in self.event_logs): 
+            return True
+        else:
+            return False
+
+    # TODO might do a getter/setter function to extract the db logic out
+    def get_event_logs(self): 
+        if hasattr(self, "event_logs") == False:
+            self.event_logs = []
+            ref = self.transcribe_request_ref()
+            event_log_ref = ref.collection("event_logs")
+            docs = event_log_ref.stream()
+            for doc in docs:
+                self.event_logs.append(doc.to_dict())
+
+
+        return self.event_logs
+
+    def last_request_has_stopped(self):
+        """
+        Checks updated_at and makes sure a reasonable amount of time has passed since the last request
+        gets called when the status is not an error, but client suspects that it should be, and was stopped without the error getting handled
+        NOTE client should also do something like this and not request a "resume" unless the reasonable amount of time has already passed
+        assumes we already refreshed record from firestore, eg in teh resume_request endpoint
+
+        Err on side of waiting. Don't want them hitting this too much and confusing our operation in the middle
+        Ideally, this helper is never necessary, since we handle all of the errors and mark the record accordingly, so can be extra cautious to not allow them to retry too quickly
+        """
+        status = self.status
+
+        # remove letters so can compare just the numbers
+        remove_letters = str.maketrans({"T": "", "Z": ""})
+
+        now = int(timestamp().translate(remove_letters))
+        last_updated_at = int(self.updated_at.translate(remove_letters))
+        # is kind of difference in seconds, unless we go above 60. Then it gets confusing (e.g., 300 would be 3 minutes, 3000 would be 30 minutes, 30000 would be 3 hours etc)
+        elapsed_time = now - last_updated_at
+
+        if status == TRANSCRIPTION_STATUSES[0]: # uploading
+            # hopefully if they error here, we'll just make them upload again...should never have to ask the server. 
+            # but setting reasonable time anyways, since this is just a helper
+            # assumes at least 1/5 MB / sec internet connection (except for that 100 = 1 min...)
+            return elapsed_time > self.size_in_MB() * 5
+
+        elif status == TRANSCRIPTION_STATUSES[1]: # uploaded
+            # we mark as received almost instantaneously, this should be quick
+            # but on the other hand, sometimes the server might have been sleeping, et cetera
+            return elapsed_time > 200
+
+        elif status == TRANSCRIPTION_STATUSES[2]: # processing-file (aka server has received)
+            # takes longer if have to transcode from whatever > flac. Otherwise, only have some quick variable setting (much less than 1 sec), some firestore calls, and a quick roundtrip request to Google's API that confirms they started the transcript, and we should be marking as transcribing
+            return elapsed_time > (100 + self.size_in_MB() * 10 if self.file_extension != "flac" else 100)
+
+        elif status == TRANSCRIPTION_STATUSES[3]: # transcribing
+            # could take awhile. But a 25 MB sized file should not take 7 min (which would be 100 + size * 25) so doubling that should be plenty
+            return elapsed_time > (100 + self.size_in_MB() * 50)
+
+        elif status == TRANSCRIPTION_STATUSES[4]: # "processing-transcription" (means that transcription is complete)
+            # should be pretty fast, just iterate over transcript, some var setting, set to firestore a few times, and ret
+            return elapsed_time > (100 + self.size_in_MB() * 1)
+
+        elif status == TRANSCRIPTION_STATUSES[5]: # "transcription-processed"
+            # stopped because done
+            return True
+
+        elif status == TRANSCRIPTION_STATUSES[6]: # server-error
+            return True
+
+        elif status == TRANSCRIPTION_STATUSES[7]: # transcribing-error
+            return True
 
     ##################################################
     # helpers for interacting with Google Speech API 
@@ -134,12 +214,6 @@ class TranscribeRequest:
                 config_dict["audio_channel_count"] = 2 # might try more later, but I think there's normally just two
                 config_dict["enable_separate_recognition_per_channel"] = True
             
-            # TODO not sure if we want to do it this way, but for now allowing user to be set like this
-            # Security relies on the file being uploadable by the user, and keeping that secure, since if so we will only transcribe and then set transcriptions based on real files in the storage
-            # user, which is needed to indicate who to snd transcript when we've finished. Only need uid though
-            if not self.get("user", False):
-                self.user = {"uid": self.file_path.split("/")[1]}
-
             logger.info("sending file: " + self.filename)
             # TODO consider sending their config object...though maybe has same results. But either way, check out the options in beta https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.RecognitionConfig
             logger.info("sending with config" + json.dumps(config_dict))
@@ -154,9 +228,11 @@ class TranscribeRequest:
         except Exception as error:
             # mark request status in firestore 
             self.mark_as_server_error(error)
+            # bubble up error
+            raise error
 
 
-    # for when status "received_by_server" 
+    # for when status "processing-file" (aka received_by_server)
     # TODO if "server-error", have server check things and make sure it's a kind of error that we want to retry, or if not, make the necessary changes before trying again.
     def request_long_running_recognize(self):
         logger.info("----------------------------------------------------------------")
@@ -356,20 +432,6 @@ class TranscribeRequest:
         doc_ref = self.transcript_document_ref()
         doc_ref.set(cleaned_data)
 
-    # TODO might do a getter/setter function to extract the db logic out
-    def get_event_logs(self): 
-        if hasattr(self, "event_logs") == False:
-            self.event_logs = []
-            ref = self.transcribe_request_ref()
-            event_log_ref = ref.collection("event_logs")
-            docs = event_log_ref.stream()
-            for doc in docs:
-                self.event_logs.append(doc.to_dict())
-
-
-        return self.event_logs
-
-
     #############################
     # status marking methods (for persisting in firestore)
     # TODO DRY this up. Can just persist the whole instance to firestore.
@@ -412,7 +474,7 @@ class TranscribeRequest:
     def mark_as_server_error(self, error):
         logger.error("Marking as Server error")
         logger.error(error)
-        self._update_status(TRANSCRIPTION_STATUSES[7], other_in_event={
+        self._update_status(TRANSCRIPTION_STATUSES[6], other_in_event={
             "error": str(error),
         }) # server-error 
 
@@ -517,4 +579,3 @@ class TranscribeRequest:
                 cleaned_data[k] = v
 
         return cleaned_data
-
