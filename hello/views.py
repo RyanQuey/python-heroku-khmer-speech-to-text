@@ -50,6 +50,8 @@ def transcribe(req):
       file_path URI for audio file in Cloud Storage, e.g. gs://[BUCKET]/[FILE]
     """
 
+    transcribe_request = False
+
     try:
         if req.method == "POST":
             # data = deepcopy(req.POST)
@@ -59,7 +61,7 @@ def transcribe(req):
             # mark request as received in firestore 
             transcribe_request.mark_as_received()
 
-            request = transcribe_request.setup_request()
+            transcribe_request.setup_request()
              
             transcribe_request.request_long_running_recognize()
             # an async func, should not stop returning the response
@@ -82,11 +84,9 @@ def transcribe(req):
         logger.info("now returning response")
 
     except Exception as error:
-        logger.info("HANDLING ERROR")
-        logger.error(traceback.format_exc())
-
-
-        return HttpResponseServerError("Server failed to handle")
+        logger.info("error transcribing file")
+        error_response = _log_error(error, transcribe_request)
+        return error_response
 
 
 @csrf_exempt
@@ -98,14 +98,16 @@ def resume_request(req):
     - avoid unnecessary requests to the Google API, to reduce costs and server strain
     - make everything really seamless and easy for the end-user
     """
+    transcribe_request = False
+
     try:
         file_data = json.loads(req.body)
         transcribe_request = TranscribeRequest(file_data)
 
         # check to see current status
         transcribe_request.refresh_from_db()
-        status = transcribe_request.status
-        status = transcribe_request.status
+        status = transcribe_request.status()
+        logger.info("Status is: " + status)
 
         # TODO need to import this constant
         if status == TRANSCRIPTION_STATUSES[0]: # uploading
@@ -113,19 +115,19 @@ def resume_request(req):
             # check if there is a file and storage, then restart if there is
             # if there isn't, tell client to prompt reupload
             # TODO 
-            pass
+            message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[1]: # uploaded
             # should not allow client to request a resume if only uploaded, unless updated_at was long enough ago. But eventually will check server side as well
             # check updated_at, then restart if too long ago
             # TODO 
-            pass
+            message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[2]: # server-received
             # check updated_at, then restart if too long ago
             # note that this stage often takes a while, since sometimes it means converting large files from one format to flac
             # TODO 
-            pass
+            message = "Not yet handling "
 
 
         elif status == TRANSCRIPTION_STATUSES[3]: # transcribing
@@ -134,46 +136,57 @@ def resume_request(req):
 
             # if status says our server is currently processing, then wait a couple seconds, check db again, and if still processing, then assume it errored out somewhere
             # TODO 
-            pass
+            message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[4]: # "transcription-complete"
             # TODO 
-            pass
+            message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[5]: # "transcription-processed"
             # do nothing...tell client it's all done. 
-            pass
+            message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[6]: # server-error
-            # TODO 
-            pass
+            # go through and make sure to mark as received if not already
+            if transcribe_request.server_received_at == None:
+                transcribe_request.mark_as_received()
+
+            # check to see if transcribing already by checking if we have a transaction ID. Maybe we errored while processing, and so can try to not have to request from google a second time, and just wait
+            if transcribe_request.transaction_id == None: 
+                # setup the request again
+                transcribe_request.setup_request()
+                transcribe_request.request_long_running_recognize()
+
+                message = "Starting to ask Google for transcription again"
+
+            else:
+                # check status, if done then can return finished transcription
+                # TODO 
+                message = "Everything is fine, just waiting for Google to transcribe"
 
 
         elif status == TRANSCRIPTION_STATUSES[7]: # transcribing-error
             # try transcribing again, unless error requires changing the file or options first
             # TODO 
-            pass
+            message = "Not yet handling "
 
         return HttpResponse(json.dumps({
-            "message": "all done"
+            "message": message
         }), content_type='application/json')
 
     except Exception as error:
-        logger.error(traceback.format_exc())
-        # TODO move this error handling to more granular handling so can handle better. Don't do it here.
-        transcribe_request.mark_as_server_error(error)
-
-        return HttpResponseServerError("Server failed to handle")
-
+        logger.error("error resuming request")
+        error_response = _log_error(error, transcribe_request)
+        return error_response
 
 
 # TODO might not need this since doing the csrf host whitelisting
 @csrf_exempt
 def check_status(request): 
     """
-    client will poll this endpoint periodically to check on how things are
-    does stuff like resume_request but only checks, doesn't actually transcribe
-    NOTE might not use in the end
+    - Client will poll this endpoint periodically to check on how things are
+    - Does stuff like resume_request but only checks, doesn't actually transcribe
+    - If everything runs smoothly, will keep asking until Google is done transcribing and then will get the transcription
     """
     pass
     # if (status == "ready" or something): (But do in transcriptRequest obj)
@@ -188,3 +201,12 @@ def check_status(request):
             #     
             # self.handle_transcript_results(transcription_results, transaction_name)
 
+def _log_error(error, transcribe_request):
+    logger.error(traceback.format_exc())
+    # TODO move this error handling to more granular handling so can handle better. Don't do it here.
+    if transcribe_request:
+        transcribe_request.mark_as_server_error(error)
+    else:
+        logger.info("no transcribe_request instance instantiated yet; leaving error logging to the client")
+
+    return HttpResponseServerError("Server errored out during transcription")

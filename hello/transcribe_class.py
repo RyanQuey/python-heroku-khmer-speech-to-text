@@ -9,6 +9,7 @@ class TranscribeRequest:
     # 3) use data from Firestone or to set the other attributes
     """
 
+    # TODO NOTE no longer file_data, so change var name
     def __init__(self, file_data):
         # necessary parts, or else can't retrieve from db
         # TODO if don't receive, throw error so that client knows
@@ -22,7 +23,6 @@ class TranscribeRequest:
         file_data should be dictionary with file data
         called initially, but also when refreshing data based on the database
 
-        TODO eventually add performance loggers like "uploaded_at", "transcribed_at"
         If there is an error, need to account for the errored_while when running stats. So if errored while transcribing, count from 
         If there are multiple errors, throw out from stats altogether
         """
@@ -43,17 +43,8 @@ class TranscribeRequest:
         self.file_size = file_data.get("file_size")
         self.original_file_path = file_data.get("original_file_path") 
         self.transaction_id = file_data.get("file_path")
+        self.event_logs = self.get_event_logs()
 
-        self.status = file_data.get("status") 
-        self.uploaded_at = file_data.get("uploaded_at") 
-        self.server_received_at = file_data.get("server_received_at") 
-        self.file_processed_at = file_data.get("file_processed_at") 
-        self.transcript_completed_at = file_data.get("transcript_completed_at") 
-        self.transcript_processed_at = file_data.get("transcript_processed_at") 
-        self.error = file_data.get("error", None) 
-        self.errored_while = file_data.get("errored_while") 
-        # set because if multiple errors, just not bothering to use this transcribe request for performance metrics
-        self.multiple_errors = file_data.get("multiple_errors") 
         # only counting attempts in this current http request, so always set to 0
         self.failed_attempts = 0
         # received from google when started already
@@ -89,21 +80,10 @@ class TranscribeRequest:
         return self.user_ref().collection("transcripts").document(doc_name)
 
     def transcribe_request_ref(self):
-        identifier = self.transcripts_for_file_identifier()
-        return self.user_ref().collection("transcribeRequests").document(identifier)
+        return self.user_ref().collection("transcribeRequests").document(self.id)
 
-    def _get_errored_while(self):
-        """
-        returns string with last non-error status
-        only necessary when there's a new error; otherwise can just check self.errored_while attr
-
-
-        """
-        if "error" in self.status:
-            # just return the last thing, which should not be an error (errored_while should never be error)
-            return self.errored_while
-        else:
-            return self.status
+    def status(self):
+        return this.event_log[-1]
 
     ##################################################
     # helpers for interacting with Google Speech API 
@@ -376,13 +356,26 @@ class TranscribeRequest:
         doc_ref = self.transcript_document_ref()
         doc_ref.set(cleaned_data)
 
+    # TODO might do a getter/setter function to extract the db logic out
+    def get_event_logs(self): 
+        if hasattr(self, "event_logs") == False:
+            self.event_logs = []
+            ref = self.transcribe_request_ref()
+            event_log_ref = ref.collection("event_logs")
+            docs = event_log_ref.stream()
+            for doc in docs:
+                self.event_logs.append(doc.to_dict())
+
+
+        return self.event_logs
+
+
     #############################
     # status marking methods (for persisting in firestore)
     # TODO DRY this up. Can just persist the whole instance to firestore.
     #############################
     def mark_as_received(self):
         self._update_status(TRANSCRIPTION_STATUSES[2], other={ # processing-file
-            "server_received_at": timestamp()
         }) 
 
     def mark_as_transcribing(self, operation_future):
@@ -396,13 +389,11 @@ class TranscribeRequest:
         # https://google-cloud-python.readthedocs.io/en/0.32.0/core/operation.html
         self._update_status(TRANSCRIPTION_STATUSES[3], other={ # transcribing
             "transaction_id": metadata.name,
-            "file_processed_at": timestamp(),
         }) 
 
     def mark_as_transcribed(self):
 
         self._update_status(TRANSCRIPTION_STATUSES[4], other={
-            "transcript_completed_at": timestamp(),
         }) # processing-transcription
 
     def mark_as_processed(self):
@@ -415,35 +406,28 @@ class TranscribeRequest:
         logger.info("deleted record of untranscribed upload...since it's uploaded")
         logger.info(response)
         self._update_status(TRANSCRIPTION_STATUSES[5], other={
-            "transcript_processed_at": timestamp(),
         }) # processing-transcription
 
 
     def mark_as_server_error(self, error):
         logger.error("Marking as Server error")
         logger.error(error)
-        self._update_status(TRANSCRIPTION_STATUSES[6], other={
+        self._update_status(TRANSCRIPTION_STATUSES[7], other_in_event={
             "error": str(error),
-            "errored_while": self._get_errored_while(),
-            "errored_at": timestamp(),
-            "multiple_errors": True if self.error else False
         }) # server-error 
 
     # keep separate from server error for now, I think they are different enough that we want to handle differently more and more as this server is built out
     def mark_as_transcribing_error(self, error):
         logger.error("Marking as Transcription error")
         logger.error(error)
-        self._update_status(TRANSCRIPTION_STATUSES[7], other={
+        self._update_status(TRANSCRIPTION_STATUSES[7], other_in_event={
             "error": str(error),
-            "errored_while": self._get_errored_while(),
-            "errored_at": timestamp(),
-            "multiple_errors": True if self.error else False
         }) # transcribing-error 
-        pass
 
     
     def _update_status(self, status, **kwargs):
         other = kwargs.get("other", {})
+        other_in_event = kwargs.get("other", {})
         """
         set the status without overwriting anything else
         better to not merge but just update the whole thing to db
@@ -451,18 +435,26 @@ class TranscribeRequest:
         """
 
         # update self in the current TranscribeRequest
-        self.status = status
-        for key in other:
-            setattr(self, key, other[key])
+        event_log = {
+            **other_in_event, 
+            "event": status,
+            "time": timestamp()
+        }
+
+        self.event_logs.append(event_log)
+
+        transcribe_request_ref = self.transcribe_request_ref()
+        event_log_ref = transcribe_request_ref.collection("eventLogs")
+        event_log_ref.add(event_log) 
+
 
         updates = {
-            **other, 
+            **other,
             "status": status,
-            "updated_at": datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+            "updated_at": timestamp(),
         }
 
         # update firestore
-        transcribe_request_ref = self.transcribe_request_ref()
         transcribe_request_ref.set(updates, merge=True)
 
 
