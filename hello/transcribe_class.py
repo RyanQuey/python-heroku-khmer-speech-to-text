@@ -34,13 +34,10 @@ class TranscribeRequest:
         # optional data from payload 
         # TODO test how optional all of this is
         # TODO DRY up using setattr and some sort of schema dict
-        # either user and/or user_id or file_path need to be set
         self.request_type = file_data.get("request_type", REQUEST_TYPES[0])
-        # TODO if this doesn't work could try like self.user = {"uid": self.file_path.split("/")[1]}
-        # Security relies on the file being uploadable by the user, and keeping that secure, since if so we will only transcribe and then set transcriptions based on real files in the storage
-        self.user = file_data.get("user", {"uid": file_data["user_id"]})
+        self.user_id = file_data.get("user_id")
         self.file_path = file_data.get("file_path")
-        self.file_type = file_data.get("content_type")
+        self.file_type = file_data.get("file_type")
         # NOTE some filetypes, such as some mp3s, are different from the file extension, e.g., mpeg instead of mp3
         self.file_extension = self.file_type.replace("audio/", "")
         self.file_size = file_data.get("file_size")
@@ -74,11 +71,12 @@ class TranscribeRequest:
         identifier = f"{stripped_filename}-lastModified{self.file_last_modified}"
         return identifier
 
+    # not really used by anything, so just make sure it's unique. I don't even think you can sort by it very easily
     def transcript_document_name(self):
-        return f"{self.filename}-at-{self.transcript_completed_at}"
+        return f"{self.filename}-at-{self.transaction_id}"
 
     def user_ref(self):
-        return db.collection('users').document(self.user["uid"])
+        return db.collection('users').document(self.user_id)
 
     def transcript_document_ref(self):
         doc_name = self.transcript_document_name()
@@ -89,6 +87,20 @@ class TranscribeRequest:
 
     def size_in_MB(self):
         return float(self.file_size) / 1048576
+
+    def elapsed_since_last_event(self):
+        status = self.status
+
+        # remove letters so can compare just the numbers
+        remove_letters = str.maketrans({"T": "", "Z": ""})
+
+        now = int(timestamp().translate(remove_letters))
+        last_updated_at = int(self.updated_at.translate(remove_letters))
+        # is kind of difference in seconds, unless we go above 60. Then it gets confusing (e.g., 300 would be 3 minutes, 3000 would be 30 minutes, 30000 would be 3 hours etc)
+        elapsed_time = now - last_updated_at
+
+        return elapsed_time
+
     ##################
     # status checkers
     ##################
@@ -123,14 +135,7 @@ class TranscribeRequest:
         Ideally, this helper is never necessary, since we handle all of the errors and mark the record accordingly, so can be extra cautious to not allow them to retry too quickly
         """
         status = self.status
-
-        # remove letters so can compare just the numbers
-        remove_letters = str.maketrans({"T": "", "Z": ""})
-
-        now = int(timestamp().translate(remove_letters))
-        last_updated_at = int(self.updated_at.translate(remove_letters))
-        # is kind of difference in seconds, unless we go above 60. Then it gets confusing (e.g., 300 would be 3 minutes, 3000 would be 30 minutes, 30000 would be 3 hours etc)
-        elapsed_time = now - last_updated_at
+        elapsed_time = self.elapsed_since_last_event()
 
         if status == TRANSCRIPTION_STATUSES[0]: # uploading
             # hopefully if they error here, we'll just make them upload again...should never have to ask the server. 
@@ -164,6 +169,44 @@ class TranscribeRequest:
 
         elif status == TRANSCRIPTION_STATUSES[7]: # transcribing-error
             return True
+
+    def check_transcription_progress(self):
+        """
+        https://google-cloud-python.readthedocs.io/en/0.32.0/_modules/google/api_core/operation.html
+        https://googleapis.dev/python/google-api-core/latest/operation.html
+        """
+        operation_dict = get_operation(self.transaction_id)
+        metadata = operation_dict["metadata"]
+        logger.info("metadata from check progress call")
+        logger.info(metadata)
+        # 100 (int) if done
+        self.transcript_metadata = {}
+        # it seems that sometimes it doesn't return the progressPercent...maybe when it's still initializing or something? Seems strange, but I've only seen 100% return so far haha
+        self.transcript_metadata["progress_percent"] = metadata.get("progressPercent", 0)
+        # format: '2020-04-25T21:22:07.436054Z'
+        self.transcript_metadata["start_time"] = metadata["startTime"]
+        self.transcript_metadata["last_updated_at"] = metadata['lastUpdateTime']
+        # format: : '2020-04-25T21:22:14.434078Z'
+
+        if operation_dict.get("error"):
+            # note that this will return done as well (as far as I know), so make sure to call before asking if done
+            # not sure what the error value will look like, but whatever
+            self.mark_as_transcribing_error(operation_dict.get("error", "UNKNOWN-ERROR"))
+            # TODO perhaps try again, perhaps depending on the type of error message
+            # TODO or let the client just request a retry
+            return
+
+        elif operation_dict["done"]:
+            results = operation_dict["response"]["results"]
+            self.mark_as_transcribed()
+            self.handle_transcript_results(results)
+
+
+        # persist progress whether or not we're done
+        self.persist()
+        self.persist_transcript_data()
+        return
+        
 
     ##################################################
     # helpers for interacting with Google Speech API 
@@ -268,17 +311,19 @@ class TranscribeRequest:
 
                     # try again with different channel configuration
                     logger.info("trying again, but with multiple channel configuration.")
-                    options["multiple_channels"] = True
-
-                    self.request_option["multiple_channels"] = True
+                    self.request_options["multiple_channels"] = True
                     self.setup_request()
+                    self.request_long_running_recognize()
+
+                elif ("Connection reset by peer" in str(error)):
+                    # NOTE I hate this error... just retry it
                     self.request_long_running_recognize()
 
                 elif ("13" in str(error)):
                     # this is internal error Error while doing a long-running request: Error: 13 INTERNAL
                     # not tested TODO
 
-                    logger.info("internal error, so just trying same thing again")
+                    logger.info("internal Google error, so just trying same thing again")
                     self.request_long_running_recognize()
 
                 elif ("WAV header indicates an unsupported format." in str(error)):
@@ -291,85 +336,83 @@ class TranscribeRequest:
                 self.mark_as_server_error(error)
 
 
-    def check_request_transcribe_status(self):
-        pass
-
     # TODO remane "process transcript results"
     def handle_transcript_results(self, results):
         """
         takes completed transcript results and processes it
         maybe in future, store base64. Not necessary for now though, and we're billed by amount of data is stored here, so bet_ter not to. There's cheaper ways if we want to do this
 
+
+        NOTE this should only have file_path if it was an uploads to storage (ie client didn't send base64)
+
+        prepare to send to firestore
+        want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
+        also want it to be easily placeable in a url without any difficulty
+        TODO put in function that first finds out that Google speech api is finished
+        array of objects with single key: "alternatives" which is array as well
+        need to convert to objects or arrays only, can't do other custom types like "SpeechRecognitionResult"
+
+        could also grab the name of the request (it's a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
         """
 
-
-        # NOTE this should only have file_path if it was an uploads to storage (ie client didn't send base64)
-
-        # prepare to send to firestore
-        # want sorted by filename so each file is easily grouped, but also timestamped so can support multiple uploads
-        # also want it to be easily placeable in a url without any difficulty
-        # TODO put in function that first finds out that Google speech api is finished
-        # array of objects with single key: "alternatives" which is array as well
-        # need to convert to objects or arrays only, can't do other custom types like "SpeechRecognitionResult"
-
-        # could also grab the name of the request (it's a short-ish unique assigned by Google integer) if ever want to match this to the api call to google
-        data = self.__dict__
-
-        mapped_results = []
-        for result in results:
-            result_dict = {
-                "channel_tag": result.channel_tag,
-                "language_code": result.language_code,
-                "alternatives": [],
-            }
-
-            result_dict["alternatives"] = []
-            #     logger.info("looking at result: " + str(i_r))
-                            
-            for alt in result.alternatives:
-                alt_dict = {
-                    "transcript": u"{}".format(alt.transcript), 
-                    "confidence": alt.confidence
+        if type(results) is not list:
+            # for when calling operation.result() straight from the operation_future received after the initial request to transcribe
+            mapped_results = []
+            for result in results:
+                result_dict = {
+                    "channel_tag": result.get("channel_tag"),
+                    "language_code": result.language_code,
+                    "alternatives": [],
                 }
-                logger.info(alt_dict)
-                result_dict["alternatives"].append(alt_dict)
 
-            mapped_results.append(result_dict)
+                result_dict["alternatives"] = []
+                #     logger.info("looking at result: " + str(i_r))
+                                
+                for alt in result.alternatives:
+                    alt_dict = {
+                        "transcript": u"{}".format(alt.transcript), 
+                        "confidence": alt.confidence
+                    }
+                    logger.info(alt_dict)
+                    result_dict["alternatives"].append(alt_dict)
 
-        data["utterances"] = mapped_results
+                mapped_results.append(result_dict)
+
+            self.utterances = mapped_results
+            # Some logger stuff
+            logger.info("\n Transcript results: \n")
+            for result in results:
+                # First alternative is the most probable result
+                alt = result.alternatives[0]
+                logger.info(u"Transcript for this result: {}".format(alt.transcript))
+
+        else:
+            # for when get operation from operation api directly
+            self.utterances = results
+            for result in results:
+                # First alternative is the most probable result
+                alt = result["alternatives"][0]
+                logger.info(u"Transcript for this result: {}".format(alt["transcript"]))
+
         logger.info("setting data to transcripts")
 
-
-        self.persist_transcript_data(data)
-
-        # Some logger stuff
-        logger.info("\n Transcript results: \n")
-        for result in results:
-            # First alternative is the most probable result
-            alternative = result.alternatives[0]
-            logger.info(u"Transcript for this result: {}".format(alt.transcript))
-
-            # cleanup storage and db records
-            # TODO add error handling if fail to delete, so that it is marked as not deleted. Perhaps a separate try/catch so we know this is what fails, and not something after.
-            # Or alternatively, something that tracks each ste_p and marks the last completed ste_p so we know where something stopped and can pick it up later/try again later
-
+        # cleanup storage and db records
+        # TODO add error handling if fail to delete, so that it is marked as not deleted. Perhaps a separate try/catch so we know this is what fails, and not something after.
+        # Or alternatively, something that tracks each ste_p and marks the last completed ste_p so we know where something stopped and can pick it up later/try again later
         # TODO put in separate method
-        for path in [file_path, original_file_path]:
+        for path in [self.file_path, self.original_file_path]:
             if (path):
                 # delete file from cloud storage (bucket assigned in the admin initializeApp call)
 
                 logger.info("deleting file from " + path)
-                bucket.blob(path).delete()
-                logger.info("deleted file from " + path)
+                blob = bucket.blob(path)
+                if blob.exists():
+                    blob.delete()
+                    logger.info("deleted file from " + path)
 
         # mark upload as finished transcribing
-
-
-
-    def poll_operation(self, operation_future):
-        """
-        takes google operation future and keeps polling it until complete
-        """
+        self.mark_as_processed()
+        return
 
 
     ##############################
@@ -421,13 +464,25 @@ class TranscribeRequest:
             # TODO handle, this means we need to request transcript again
 
 
-    def persist_transcript_data(self, data):
+    def persist(self):
+        data = self.__dict__
+        cleaned_data = TranscribeRequest.cleanup_dictionary(data)
+        transcribe_request_ref = self.transcribe_request_ref()
+        transcribe_request_ref.set(cleaned_data, merge=True)
+
+
+    def persist_transcript_data(self):
         """
-        data is dictionary, based on Transcribe class instance
-        sets data to the transcript ref in firestore
-        only for completed transcripts (incomplete should be at transcribeRequests ref)
-        doc_name is unique identifier for this transcription, different for each version of the transcript even for the same file
+        NOTE is persisting the transcript, not the TranscriptRequest. 
+        - Basically just called when transcript is complete. Though maybe later will write out the transcript as it's being made, so want a constant ref after all. Though that could be achieved by just persisting the transcript_id on the transcript_request record
+        - data is dictionary, based on Transcribe class instance
+        - sets data to the transcript ref in firestore
+        - only for completed transcripts (incomplete should be at transcribeRequests ref)
+        - doc_name is unique identifier for this transcription, different for each version of the transcript even for the same file
+
+        TODO only set attributes needed for the transcript, don't want everything on this thing!
         """
+        data = self.__dict__
         cleaned_data = TranscribeRequest.cleanup_dictionary(data)
         doc_ref = self.transcript_document_ref()
         doc_ref.set(cleaned_data)
@@ -445,18 +500,18 @@ class TranscribeRequest:
         operation_future is an operation_future received from Google in response to hitting their speech to text api
         """
 
-        logger.info("operation name is: " + operation_future.operation.name)
-        metadata = operation_future.operation
+        operation_name = operation_future.operation.name
+        logger.info("operation name is: " + operation_name)
+
 
         # https://google-cloud-python.readthedocs.io/en/0.32.0/core/operation.html
         self._update_status(TRANSCRIPTION_STATUSES[3], other={ # transcribing
-            "transaction_id": metadata.name,
+            "transaction_id": operation_name,
         }) 
 
     def mark_as_transcribed(self):
 
-        self._update_status(TRANSCRIPTION_STATUSES[4], other={
-        }) # processing-transcription
+        self._update_status(TRANSCRIPTION_STATUSES[4]) # processing-transcription
 
     def mark_as_processed(self):
         # logger.info("deleting record of untranscribed upload: " + f"users/{self.user['uid']}/transcribeRequests/{identifier}")
@@ -483,13 +538,14 @@ class TranscribeRequest:
         logger.error("Marking as Transcription error")
         logger.error(error)
         self._update_status(TRANSCRIPTION_STATUSES[7], other_in_event={
+            # TODO set something better, this is just doing the error code for now
             "error": str(error),
         }) # transcribing-error 
 
     
     def _update_status(self, status, **kwargs):
         other = kwargs.get("other", {})
-        other_in_event = kwargs.get("other", {})
+        other_in_event = kwargs.get("other_in_event", {})
         """
         set the status without overwriting anything else
         better to not merge but just update the whole thing to db
@@ -503,12 +559,10 @@ class TranscribeRequest:
             "time": timestamp()
         }
 
+        self.status = status
         self.event_logs.append(event_log)
 
         transcribe_request_ref = self.transcribe_request_ref()
-        event_log_ref = transcribe_request_ref.collection("eventLogs")
-        event_log_ref.add(event_log) 
-
 
         updates = {
             **other,
@@ -516,9 +570,15 @@ class TranscribeRequest:
             "updated_at": timestamp(),
         }
 
-        # update firestore
-        transcribe_request_ref.set(updates, merge=True)
 
+        # update status (and whatever is in other) to firestore 
+        transcribe_request_ref.set(updates, merge=True)
+        logger.info("updated status")
+        logger.info(updates)
+
+        # log the new event
+        event_log_ref = transcribe_request_ref.collection("eventLogs")
+        event_log_ref.add(event_log) 
 
 
     ################################    

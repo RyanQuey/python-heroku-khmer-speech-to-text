@@ -1,3 +1,4 @@
+# NOTE/TODO if ever import into more than one file, will need to conditionally initialize some of these services to make sure they only run once
 import os
 import asyncio
 from django.conf import settings
@@ -8,6 +9,11 @@ from firebase_admin import firestore
 from google.cloud import speech_v1p1beta1
 from google.cloud.speech_v1p1beta1 import enums
 from datetime import datetime
+from googleapiclient import discovery
+from google.api_core import operations_v1
+from oauth2client.client import GoogleCredentials
+from pprint import pprint
+
 # experiment with logging
 import traceback
 import logging
@@ -22,12 +28,15 @@ from copy import deepcopy
 APP_NAME = "khmer-speech-to-text"
 BUCKET_NAME = "khmer-speech-to-text.appspot.com"
 logger = logging.getLogger('testlogger')
-admin_key = os.environ.get('ADMIN_KEY_LOCATION')
-no_role_key = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+# provide alternate path in case we don't want to set the GOOGLE_APPLICATION_CREDENTIALS, though this matters less with honcho
+admin_key_location = os.environ.get('ADMIN_KEY_LOCATION')
+from pprint import pprint
+default_key_location = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
 
 # path to service account json file
 # don't need to set the credentials, everything is automatically derived from system GOOGLE_APPLICATION_CREDENTIALS env var. But if need a different credential, can set it 
-service_account = admin_key or no_role_key
+service_account = admin_key_location or default_key_location
+
 cred = credentials.Certificate(service_account)
 firebase_admin.initialize_app(cred, {
     'storageBucket': BUCKET_NAME,
@@ -35,13 +44,44 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': f"https://{APP_NAME}.firebaseio.com/",
 })
 
+# for getting operation_futures
+# don't know if this will work, officially they have sample like so: 
+# if don't want to set, GOOGLE_APPLICATION_CREDENTIALS can try this
+# https://github.com/googleapis/google-cloud-python/issues/1883#issuecomment-279214250
+# TODO remove; I think not using this, need to call the operations.get from the speech client, or it doesn't find the operation
+# credentials = GoogleCredentials.get_application_default()
+# but trying to use the firebase admin creds for now
+# google_api_service = discovery.build('cloudresourcemanager', 'v1', credentials=credentials)
+
 # not sure why, but doing admin.firestore.Client() doesn't work on its own
+# NOTE should now, we're setting the GOOGLE_APPLICATION_CREDENTIALS now
 db = firestore.Client.from_service_account_json(service_account)
 
 # alias so don't have to write out the beta part
 # for now only using the beta
+
 speech = speech_v1p1beta1
 speech_client = speech.SpeechClient.from_service_account_json(service_account)
+
+operations_api = operations_v1.OperationsClient(speech_client.transport.channel)
+def get_operation_old(operation_name):
+    """
+    - I'm currently not using this, but reserving this code for future use especially since it is difficult to locate within the documentation
+    - Borrowing code from https://github.com/googleapis/python-speech/issues/8
+    - To get metadata: get_operation(name).metadata
+    """
+    op = operations_api.get_operation(operation_name)
+    return op
+
+def get_operation(operation_name):
+    """
+    - Borrowing code from https://github.com/googleapis/python-speech/issues/8
+    - operation returned is similar to what is returned by the original long-running request, but is a dict
+    """
+    speech_service = discovery.build('speech', 'v1p1beta1')
+    request = speech_service.operations().get(name=operation_name)
+    operation_dict = request.execute()
+    return operation_dict
 
 bucket = storage.bucket()
 
@@ -58,8 +98,8 @@ WHITE_LISTED_USERS = [
 FILE_TYPES = ["flac", "mp3", "wav", "mpeg"] 
 file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
 
-# Setup firebase admin sdk
-isDev = settings.ENV == "DEVELOPMENT"
+# not using right now
+# isDev = settings.ENV == "DEVELOPMENT"
 
 REQUEST_TYPES = [
     "initial-request", 

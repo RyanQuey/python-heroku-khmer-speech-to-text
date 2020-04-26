@@ -15,28 +15,8 @@ from copy import deepcopy
 import logging
 logger = logging.getLogger('testlogger')
 
-####################################
-# Helpers
-####################################
-# use custom response class to override HttpResponse.close()
-# NOTE no longer needing to use this though, so transition off of it
-class LogSuccessResponse(HttpResponse):
-    def close(self):
-        super(LogSuccessResponse, self).close()
-
-        # do whatever you want, this is the last codepoint in req handling
-        all_of_it = self.getvalue()
-        my_json = json.loads(all_of_it)
-        data = my_json["data"]
-        request = my_json["request"]
-        options_dict = my_json["options_dict"]
-        # TODO do this in course of normal http transaction, but only request, don't wait for the transcription to finish
-
-
-        logger.info("all done transcribing and setting and cleaning up")
-
 ###################################
-# Endpoints
+# Controllers 
 ###################################
 
 # TODO might not need this since doing the csrf host whitelisting
@@ -70,7 +50,7 @@ def transcribe(req):
             response = HttpResponse(json.dumps({
                 "file_data": file_data,
                 "request_options": transcribe_request.request_options,
-                "request": request,
+                "request": transcribe_request.request_params,
             }), content_type='application/json')
             
             logger.info(response)
@@ -107,12 +87,10 @@ def resume_request(req):
         # check to see current status
         transcribe_request.refresh_from_db()
         status = transcribe_request.status
-        logger.info("Status is: " + status)
 
         if transcribe_request.last_request_has_stopped() == False:
-            message = "Please wait a little longer before requesting"
+            message = "Please wait a little longer before requesting, it's only been {} so far".format(transcribe_request.elapsed_since_last_event())
 
-        # TODO need to import this constant
         elif status == TRANSCRIPTION_STATUSES[0]: # uploading
             # whoops...shouldn't be here!
             # check if there is a file and storage, then restart if there is
@@ -130,7 +108,7 @@ def resume_request(req):
             # check updated_at, then restart if too long ago
             # note that this stage often takes a while, since sometimes it means converting large files from one format to flac
             # TODO 
-            message = _setup_and_transcribe_again(transcribe_request)
+            message = _resume_transcribing_or_processing(transcribe_request)
 
 
         elif status == TRANSCRIPTION_STATUSES[3]: # transcribing
@@ -150,12 +128,12 @@ def resume_request(req):
             message = "Not yet handling "
 
         elif status == TRANSCRIPTION_STATUSES[6]: # server-error
-            message = _setup_and_transcribe_again(transcribe_request)
+            message = _resume_transcribing_or_processing(transcribe_request)
 
         elif status == TRANSCRIPTION_STATUSES[7]: # transcribing-error
             # try transcribing again, unless error requires changing the file or options first
             # TODO setup to handle different errors from Google. For now, just handling as any other error
-            message = _setup_and_transcribe_again(transcribe_request)
+            message = _resume_transcribing_or_processing(transcribe_request)
 
         return HttpResponse(json.dumps({
             "message": message
@@ -169,25 +147,45 @@ def resume_request(req):
 
 # TODO might not need this since doing the csrf host whitelisting
 @csrf_exempt
-def check_status(request): 
+def check_status(req): 
     """
     - Client will poll this endpoint periodically to check on how things are
     - Does stuff like resume_request but only checks, doesn't actually transcribe
     - If everything runs smoothly, will keep asking until Google is done transcribing and then will get the transcription
+
+    TODO 
+    - Maybe move to background worker, and just poll whether or not client asks
     """
-    pass
-    # if (status == "ready" or something): (But do in transcriptRequest obj)
+    # get operation from Google
+    # https://cloud.google.com/resource-manager/reference/rest/v1/operations/get
 
-            # result = operation_future.result()
+    transcribe_request = False
 
-            # # Get a Promise re_presentation of the final result of the job
-            # # this part is async, will not return the final result, will just write it in the db
-            # # Otherwise, will timeout
-            # transcription_results = result.results
-            # # NOTE this might not be latest metadata, might be data from before it's finished. TODO try calling reload if it's not latest?
-            #     
-            # self.handle_transcript_results(transcription_results, transaction_name)
+    try:
+        file_data = json.loads(req.body)
+        transcribe_request = TranscribeRequest(file_data)
 
+        # check to see current status
+        # TODO maybe only check Google depending on current status?
+        transcribe_request.refresh_from_db()
+        transcribe_request.check_transcription_progress() 
+
+        return HttpResponse(json.dumps({
+            "message": "finished checking status",
+            "progress_percent": transcribe_request.progress_percent,
+            "current_request_data": transcribe_request.__data__
+
+        }), content_type='application/json')
+
+
+    except Exception as error:
+        logger.error("error resuming request")
+        error_response = _log_error(error, transcribe_request)
+        return error_response
+
+##########################################
+# Controller Helpers
+#######################
 def _log_error(error, transcribe_request):
     logger.error(traceback.format_exc())
     # TODO move this error handling to more granular handling so can handle better. Don't do it here.
@@ -202,7 +200,7 @@ def _log_error(error, transcribe_request):
 
     return HttpResponseServerError("Server errored out during transcription request")
 
-def _setup_and_transcribe_again(transcribe_request):
+def _resume_transcribing_or_processing(transcribe_request):
     # go through and make sure to mark as received if not already
     if transcribe_request.server_has_received() == False:
         transcribe_request.mark_as_received()
@@ -218,12 +216,31 @@ def _setup_and_transcribe_again(transcribe_request):
         message = "Starting to ask Google for transcription again"
 
     else:
-        logger.info("well then what is it? {}".format(transcribe_request.transaction_id))
+        transcribe_request.check_transcription_progress() 
+        message = "checked status of already ongoing transcription operation"
         # check status, if done then can return finished transcription
         # TODO 
-        message = "Everything is fine, just waiting for Google to transcribe"
+        # also, need different handling if this was called from a transcribing-error, since presumably this means that it's Google's fault and we probably need do do something beyond just checking the status
 
-
-
-    logger.info("returning message now")
     return message
+
+
+class LogSuccessResponse(HttpResponse):
+    """
+    use custom response class to override HttpResponse.close()
+    NOTE no longer needing to use this though, so transition off of it
+    """
+    def close(self):
+        super(LogSuccessResponse, self).close()
+
+        # do whatever you want, this is the last codepoint in req handling
+        all_of_it = self.getvalue()
+        my_json = json.loads(all_of_it)
+        data = my_json["data"]
+        request = my_json["request"]
+        options_dict = my_json["options_dict"]
+        # TODO do this in course of normal http transaction, but only request, don't wait for the transcription to finish
+
+
+        logger.info("all done transcribing and setting and cleaning up")
+
