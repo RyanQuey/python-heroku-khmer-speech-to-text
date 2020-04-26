@@ -424,11 +424,22 @@ class TranscribeRequest:
             if (path):
                 # delete file from cloud storage (bucket assigned in the admin initializeApp call)
 
-                logger.info("deleting file from " + path)
-                blob = bucket.blob(path)
-                if blob.exists():
-                    blob.delete()
-                    logger.info("deleted file from " + path)
+                try:
+                    blob = bucket.blob(path)
+                    if reset_retry(blob.exists)():
+                        logger.info("deleting file from " + path)
+                        reset_retry(blob.delete)()
+                        logger.info("deleted file from " + path)
+
+                except Exception as error:
+                    # typically something like: "ConnectionResetError: [Errno 104] Connection reset by peer"
+                    # tracked here: https://github.com/googleapis/google-cloud-python/issues/5879#issuecomment-535135348
+                    # official temp solution is here: https://github.com/googleapis/google-cloud-python/issues/5879#issuecomment-535135348
+                    logger.error("error deleting file " + path)
+                    logger.error(error)
+                    if "Connection reset by peer" in str(error):
+                        # if the above decorator doesn't work, retry here
+                        pass
 
         # mark upload as finished transcribing
         self.mark_as_processed()

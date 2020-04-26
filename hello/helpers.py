@@ -13,6 +13,9 @@ from googleapiclient import discovery
 from google.api_core import operations_v1
 from oauth2client.client import GoogleCredentials
 from pprint import pprint
+from urllib3.exceptions import ProtocolError
+from google.api_core import retry
+
 
 # experiment with logging
 import traceback
@@ -176,6 +179,17 @@ def to_timestamp(string):
     """
     date_time_obj = datetime.strptime(string, '%Y-%m-%dT%H:%M:%S.%fZ')
     return date_time_obj.strftime("%Y%m%dT%H%M%SZ") 
+
+# derived from https://github.com/googleapis/google-cloud-python/issues/5879#issuecomment-535135348, to reset if "reset by peer connection" or whatever
+# might be able to pass into certain helpers, and elsewhere use as wrapper around what you want to retry
+# docs mention use as decorator: @retry.Retry(predicate=if_exception_type(exceptions.NotFound))
+# see here: https://googleapis.dev/python/google-api-core/latest/retry.html
+predicate = retry.if_exception_type(
+    ConnectionResetError, ProtocolError)
+reset_retry = retry.Retry(predicate)
+
+
+
 
 # TODO maybe we want the equivalent for python
 # Express middleware that validates Firebase ID Tokens passed in the Authorization Ht_tP header.
