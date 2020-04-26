@@ -292,7 +292,7 @@ class TranscribeRequest:
             logger.info("options here is: " +  json.dumps(self.request_options))
             # this is initial response, not complete transcript yet
             # TODO handle if there's no file there, ie it got deleted but they request again or something
-            operation_future = speech_client.long_running_recognize(self.request_params['config'], self.request_params['audio'])
+            operation_future = speech_client.long_running_recognize(self.request_params['config'], self.request_params['audio'], retry=reset_retry)
             # NOTE for some reason operation_future.metadata returns None
             self.mark_as_transcribing(operation_future)
 
