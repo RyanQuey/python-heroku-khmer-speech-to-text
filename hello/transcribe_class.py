@@ -63,6 +63,9 @@ class TranscribeRequest:
     def attempt_count(self):
         return self.failed_attempts + 1
 
+    def transaction_complete(self):
+        return self.status == TRANSCRIPTION_STATUSES[5]
+
     def transcripts_for_file_identifier(self):
         """
         is not a uuid, but is based on the file, so that one file keeps all of its transcripts together
@@ -136,6 +139,7 @@ class TranscribeRequest:
         """
         status = self.status
         elapsed_time = self.elapsed_since_last_event()
+        logger.info(f"elapsed time is {elapsed_time}")
 
         if status == TRANSCRIPTION_STATUSES[0]: # uploading
             # hopefully if they error here, we'll just make them upload again...should never have to ask the server. 
@@ -184,9 +188,9 @@ class TranscribeRequest:
         # it seems that sometimes it doesn't return the progressPercent...maybe when it's still initializing or something? Seems strange, but I've only seen 100% return so far haha
         self.transcript_metadata["progress_percent"] = metadata.get("progressPercent", 0)
         # format: '2020-04-25T21:22:07.436054Z'
-        self.transcript_metadata["start_time"] = metadata["startTime"]
-        self.transcript_metadata["last_updated_at"] = metadata['lastUpdateTime']
+        self.transcript_metadata["start_time"] = to_timestamp(metadata["startTime"])
         # format: : '2020-04-25T21:22:14.434078Z'
+        self.transcript_metadata["last_updated_at"] = to_timestamp(metadata['lastUpdateTime'])
 
         if operation_dict.get("error"):
             # note that this will return done as well (as far as I know), so make sure to call before asking if done
@@ -196,7 +200,8 @@ class TranscribeRequest:
             # TODO or let the client just request a retry
             return
 
-        elif operation_dict["done"]:
+        # unfortunately, if not done, doesn't set this...so don't access directly
+        elif operation_dict.get("done"):
             results = operation_dict["response"]["results"]
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
@@ -254,6 +259,7 @@ class TranscribeRequest:
             
             # TODO dynamically test audio for channels
             if (self.request_options.get("multiple_channels")):
+                logger.info("Sending with multiple channels")
                 config_dict["audio_channel_count"] = 2 # might try more later, but I think there's normally just two
                 config_dict["enable_separate_recognition_per_channel"] = True
             
@@ -297,7 +303,7 @@ class TranscribeRequest:
             logger.error('Error while doing a long-running request:')
             logger.error(error)
             # TODO add back in maybe, but for now keep things simple
-            if (self.failed_attempts < 3):
+            if (self.failed_attempts < 2):
                 # need at least two, one for if internal error, and then if another is for channels 
                 self.failed_attempts += 1
 
@@ -305,6 +311,8 @@ class TranscribeRequest:
                 if (str(error) in [
                     # got with fileout.wav. code 3 
                     "Must use single channel (mono) audio, but WAV header indicates 2 channels.",  
+                    # or is it this one?
+                    "400 Must use single channel (mono) audio, but WAV header indicates 2 channels.",
                     # got with fileout.flac 
                     "400 Invalid audio channel count",
                 ]):
@@ -317,6 +325,8 @@ class TranscribeRequest:
 
                 elif ("Connection reset by peer" in str(error)):
                     # NOTE I hate this error... just retry it
+                    # I think teh full str is: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+                    # at least sometimes
                     self.request_long_running_recognize()
 
                 elif ("13" in str(error)):
@@ -326,11 +336,21 @@ class TranscribeRequest:
                     logger.info("internal Google error, so just trying same thing again")
                     self.request_long_running_recognize()
 
-                elif ("WAV header indicates an unsupported format." in str(error)):
-                    pass
+                elif ("WAV header indicates an unsupported format." == str(error)):
                     # TODO panic
                     # not tested TODO
+                    # TODO don't let them retry too many times, it'll hit some quota or something probably
+                    # don't bother retrying...
+                    pass
 
+                elif "400 Invalid recognition 'config': bad sample rate hertz." == str(error):
+                    # TODO try again with different hertz? 
+                    pass
+
+                else:
+                    logger.error("well then what was our error??")
+                    logger.error(str(error))
+                    self.mark_as_server_error(error)
             else:
                 # TODO mark as either server error or Google error depending on the error  
                 self.mark_as_server_error(error)

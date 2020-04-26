@@ -87,8 +87,10 @@ def resume_request(req):
         # check to see current status
         transcribe_request.refresh_from_db()
         status = transcribe_request.status
+        logger.info(f"Status is now {status}")
 
         if transcribe_request.last_request_has_stopped() == False:
+            logger.info("making them wait a little bit longer")
             message = "Please wait a little longer before requesting, it's only been {} so far".format(transcribe_request.elapsed_since_last_event())
 
         elif status == TRANSCRIPTION_STATUSES[0]: # uploading
@@ -172,8 +174,8 @@ def check_status(req):
 
         return HttpResponse(json.dumps({
             "message": "finished checking status",
-            "progress_percent": transcribe_request.progress_percent,
-            "current_request_data": transcribe_request.__data__
+            "progress_percent": transcribe_request.transcript_metadata["progress_percent"],
+            "current_request_data": transcribe_request.__dict__
 
         }), content_type='application/json')
 
@@ -206,7 +208,7 @@ def _resume_transcribing_or_processing(transcribe_request):
         transcribe_request.mark_as_received()
 
     # check to see if transcribing already by checking if we have a transaction ID. Maybe we errored while processing, and so can try to not have to request from google a second time, and just wait
-    logger.info("checknig transaction id")
+    logger.info("checking transaction id")
     if transcribe_request.transaction_id == None: 
         # setup the request again
         logger.info("now setting up ")
@@ -214,6 +216,9 @@ def _resume_transcribing_or_processing(transcribe_request):
         transcribe_request.request_long_running_recognize()
 
         message = "Starting to ask Google for transcription again"
+
+    elif transcribe_request.transaction_complete():
+        message = "seems like it's on the way to being returned, so just hold tight"
 
     else:
         transcribe_request.check_transcription_progress() 

@@ -170,6 +170,13 @@ def timestamp():
     return datetime.utcnow().strftime("%Y%m%dT%H%M%SZ") 
 
 
+def to_timestamp(string):
+    """
+    NOTE only takes strings in one format for now
+    """
+    date_time_obj = datetime.strptime(string, '%Y-%m-%dT%H:%M:%S.%fZ')
+    return date_time_obj.strftime("%Y%m%dT%H%M%SZ") 
+
 # TODO maybe we want the equivalent for python
 # Express middleware that validates Firebase ID Tokens passed in the Authorization Ht_tP header.
 # The Firebase ID token needs to be passed as a Bearer token in the Authorization Ht_tP header like this:
