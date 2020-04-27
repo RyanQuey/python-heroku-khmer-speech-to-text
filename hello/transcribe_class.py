@@ -193,11 +193,12 @@ class TranscribeRequest:
         self.transcript_metadata["last_updated_at"] = to_timestamp(metadata['lastUpdateTime'])
 
         if operation_dict.get("error"):
-            # note that this will return done as well (as far as I know), so make sure to call before asking if done
+            # TODO have to test, not sure if this is working as I would expect
+            # force user to retry
             # not sure what the error value will look like, but whatever
             self.mark_as_transcribing_error(operation_dict.get("error", "UNKNOWN-ERROR"))
             # TODO perhaps try again, perhaps depending on the type of error message
-            # TODO or let the client just request a retry
+            # unless we just want to let the client just request a retry (which is most of the time true, it is getting more and more rare where the server returns an error, but retrying fixes it)
             return
 
         # unfortunately, if not done, doesn't set this...so don't access directly
@@ -285,7 +286,6 @@ class TranscribeRequest:
     # TODO if "server-error", have server check things and make sure it's a kind of error that we want to retry, or if not, make the necessary changes before trying again.
     def request_long_running_recognize(self):
         logger.info("----------------------------------------------------------------")
-        logger.info("----------------------------------------------------------------")
         try:
             logger.info(f"Attempt # {self.attempt_count()}")
 
@@ -342,7 +342,7 @@ class TranscribeRequest:
                     # not tested TODO
                     # TODO don't let them retry too many times, it'll hit some quota or something probably
                     # don't bother retrying...
-                    pass
+                    self.mark_as_transcribing_error(error)
 
                 elif "400 Invalid recognition 'config': bad sample rate hertz." == str(error):
                     # TODO try again with different hertz? 
@@ -351,10 +351,10 @@ class TranscribeRequest:
                 else:
                     logger.error("well then what was our error??")
                     logger.error(str(error))
-                    self.mark_as_server_error(error)
+                    self.mark_as_transcribing_error(error)
             else:
-                # TODO mark as either server error or Google error depending on the error  
-                self.mark_as_server_error(error)
+                # note that it might be our fault for sending them something, but we are not the ones directly throwing the error, so it is a transcribing error
+                self.mark_as_transcribing_error(error)
 
 
     # TODO remane "process transcript results"
@@ -585,6 +585,12 @@ class TranscribeRequest:
         }
 
         self.status = status
+        if other_in_event.get("error"):
+            error = other_in_event.get("error")
+            # set error on obj for easy access
+            self.error = str(error)
+        else:
+            self.error = ""
         self.event_logs.append(event_log)
 
         transcribe_request_ref = self.transcribe_request_ref()
@@ -593,6 +599,7 @@ class TranscribeRequest:
             **other,
             "status": status,
             "updated_at": timestamp(),
+            "error": self.error, # either sets as error or blank string
         }
 
 

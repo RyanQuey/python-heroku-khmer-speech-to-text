@@ -47,10 +47,10 @@ def transcribe(req):
             # an async func, should not stop returning the response
             # TODO later, optionally convert file
             # transcribe
+
+            # if get here, either it is now transcribing or we handled the error (though that doesn't mean that we continued to retry)
             response = HttpResponse(json.dumps({
-                "file_data": file_data,
-                "request_options": transcribe_request.request_options,
-                "request": transcribe_request.request_params,
+                "current_request_data": transcribe_request.__dict__
             }), content_type='application/json')
             
             logger.info(response)
