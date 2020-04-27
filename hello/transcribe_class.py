@@ -324,6 +324,7 @@ class TranscribeRequest:
                     self.request_long_running_recognize()
 
                 elif ("Connection reset by peer" in str(error)):
+                    # NOTE should not get these anymore due to new retry strategy
                     # NOTE I hate this error... just retry it
                     # I think teh full str is: ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
                     # at least sometimes
@@ -547,14 +548,7 @@ class TranscribeRequest:
     def mark_as_processed(self):
         # logger.info("deleting record of untranscribed upload: " + f"users/{self.user['uid']}/transcribeRequests/{identifier}")
 
-        transcribe_request_ref = self.transcribe_request_ref()
-
-        # delete it, since we're all done
-        response = transcribe_request_ref.delete()
-        logger.info("deleted record of untranscribed upload...since it's uploaded")
-        logger.info(response)
-        self._update_status(TRANSCRIPTION_STATUSES[5], other={
-        }) # processing-transcription
+        self._update_status(TRANSCRIPTION_STATUSES[5]) # processing-transcription
 
 
     def mark_as_server_error(self, error):
