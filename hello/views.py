@@ -104,7 +104,7 @@ def resume_request(req):
             # should not allow client to request a resume if only uploaded, unless updated_at was long enough ago. But eventually will check server side as well
             # check updated_at, then restart if too long ago
             # TODO 
-            message = "Not yet handling "
+            message = _resume_transcribing_or_processing(transcribe_request)
 
         elif status == TRANSCRIPTION_STATUSES[2]: # processing-file (aka server has received)
             # check updated_at, then restart if too long ago
