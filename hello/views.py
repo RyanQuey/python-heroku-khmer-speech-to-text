@@ -97,8 +97,10 @@ def resume_request(req):
             # whoops...shouldn't be here!
             # check if there is a file and storage, then restart if there is
             # if there isn't, tell client to prompt reupload
-            # TODO 
-            message = "Not yet handling "
+            # TODO use better python exception
+            transcribe_request.mark_as_server_error(Exception("404 No such object"))
+            
+            message = "they should try uploading again"
 
         elif status == TRANSCRIPTION_STATUSES[1]: # uploaded
             # should not allow client to request a resume if only uploaded, unless updated_at was long enough ago. But eventually will check server side as well
