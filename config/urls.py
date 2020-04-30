@@ -7,7 +7,7 @@ from django.contrib import admin
 
 admin.autodiscover()
 
-import hello.views
+import transcription.views
 
 # To add a new path, first import the app:
 # import blog
@@ -18,10 +18,10 @@ import hello.views
 # Learn more here: https://docs.djangoproject.com/en/2.1/topics/http/urls/
 
 urlpatterns = [
-    path("request-transcribe/", hello.views.transcribe, name="transcribe"),
-    path("resume-request/", hello.views.resume_request, name="resume-request"),
-    path("check-status/", hello.views.check_status, name="check-status"),
+    path("request-transcribe/", transcription.views.transcribe, name="transcribe"),
+    path("resume-request/", transcription.views.resume_request, name="resume-request"),
+    path("check-status/", transcription.views.check_status, name="check-status"),
     # something to add for when using heroku hobby dynos
-    path("wake-up/", csrf_exempt(lambda request: HttpResponse('Hello World! Waking up')), name="wake-up"),
+    path("wake-up/", csrf_exempt(lambda request: HttpResponse('transcription World! Waking up')), name="wake-up"),
     path("admin/", admin.site.urls),
 ]
