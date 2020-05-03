@@ -99,6 +99,7 @@ file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
 # not using right now
 # isDev = settings.ENV == "DEVELOPMENT"
 
+# TODO note not using right now, should just remove
 REQUEST_TYPES = [
     "initial-request", 
     "continue-transcribing-request",

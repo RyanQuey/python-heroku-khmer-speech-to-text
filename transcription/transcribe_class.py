@@ -1,4 +1,5 @@
 from .helpers import * 
+from .plovpit_common_phrases import en_bible_reference_phrases, specific_reference_FOR_TESTING
 
 class TranscribeRequest:
     """
@@ -223,6 +224,7 @@ class TranscribeRequest:
         build a config_dict and audio dict to send to Google
         """
 
+        # logger.info("all phrases I'm sending: {}".format(en_bible_reference_phrases))
         try:
             if (self.file_extension not in FILE_TYPES):
                 raise Exception( f'File type {self.file_extension} is not allowed, only {file_types_sentence}')
@@ -378,6 +380,7 @@ class TranscribeRequest:
 
         if type(results) is not list:
             # for when calling operation.result() straight from the operation_future received after the initial request to transcribe
+            # NOTE should never happen unless doing synchronous recognize...TODO remove this, since not using 
             mapped_results = []
             for result in results:
                 result_dict = {
@@ -408,7 +411,7 @@ class TranscribeRequest:
                 logger.info(u"Transcript for this result: {}".format(alt.transcript))
 
         else:
-            # for when get operation from operation api directly
+            # for when get operation from operation api directly.
             self.utterances = results
             for result in results:
                 # First alternative is the most probable result
@@ -635,20 +638,16 @@ class TranscribeRequest:
     )
 
     # boost max should be 20
-    _speech_context_boosts = [{
-        "phrases": ["add a new line", "new line", "add a period", "question mark", "add a question mark", "hard stop", "period", "space", "exclamation mark", "add an exclamation mark"],
-        "boost": 20
-    }, {
-        # note that Khmer doesn't have boosts available, only English
-        "phrases": ["។", "ដាក់space"],
-    }]
+    _speech_context_boosts = [
+        en_bible_reference_phrases, 
+        #specific_reference_FOR_TESTING,
+    ]
 
     _base_config = {
         "encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
         "language_code": 'km-KH',
-        # not using this for now, so remove
         "alternative_language_codes": [
-            "en-US"
+            "en"
         ],
         "sample_rate_hertz": None, 
         # only works for English
