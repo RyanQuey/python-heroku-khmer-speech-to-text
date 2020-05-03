@@ -49,8 +49,15 @@ def transcribe(req):
             # transcribe
 
             # if get here, either it is now transcribing or we handled the error (though that doesn't mean that we continued to retry)
+
+            # remove any keys that have something that can't call __dict__ or json.dumps on
+            jsonable_request_data = deepcopy(transcribe_request)
+            # avoiding this one: TypeError: Object of type RecognitionMetadata is not JSON serializable
+            # TODO better to have a helper that does this automatically
+            # NOTE returning this stuff is entirely optional, but is helpful for debugging
+            del jsonable_request_data.request_params["config"]["metadata"]
             response = HttpResponse(json.dumps({
-                "current_request_data": transcribe_request.__dict__
+                "current_request_data": jsonable_request_data.__dict__
             }), content_type='application/json')
             
             logger.info(response)

@@ -628,18 +628,28 @@ class TranscribeRequest:
     # - Google: "Best for audio that is not one of the specific audio models. For example, long-form audio. Ideally the audio is high-fidelity, recorded at a 16khz or greater sampling rate."
 
     # https://github.com/GoogleCloudPlatform/python-docs-samples/blob/master/speech/cloud-client/beta_snippets.py#L78
-    _metadataConfig = speech.types.RecognitionMetadata()
+    _metadata_config = speech.types.RecognitionMetadata()
     # only setting this for now; others need to be specified by enduser in client
-    _metadataConfig.interaction_type = (
+    _metadata_config.interaction_type = (
         speech.enums.RecognitionMetadata.InteractionType.DICTATION
     )
+
+    # boost max should be 20
+    _speech_context_boosts = [{
+        "phrases": ["add a new line", "new line", "add a period", "question mark", "add a question mark", "hard stop", "period", "space", "exclamation mark", "add an exclamation mark"],
+        "boost": 20
+    }, {
+        # note that Khmer doesn't have boosts available, only English
+        "phrases": ["។", "ដាក់space"],
+    }]
+
     _base_config = {
         "encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
         "language_code": 'km-KH',
         # not using this for now, so remove
-        #"alternative_language_codes": [
-        #    "en-US"
-        #],
+        "alternative_language_codes": [
+            "en-US"
+        ],
         "sample_rate_hertz": None, 
         # only works for English
         "enable_automatic_punctuation": True,
@@ -647,7 +657,8 @@ class TranscribeRequest:
         "max_alternatives": 3, # I think it's free, so why not get more ha. But makes us store more in firestore, eventually might start having to pay...better to store less unless we actually want to use alts later
         "enable_word_confidence": True, 
         "enable_word_time_offsets": True, # returns times
-        "metadata": _metadataConfig,
+        "metadata": _metadata_config,
+        "speech_contexts": _speech_context_boosts,
     }
 
     _flac_config = {
