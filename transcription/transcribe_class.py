@@ -266,7 +266,7 @@ class TranscribeRequest:
             
             logger.info("sending file: " + self.filename)
             # TODO consider sending their config object...though maybe has same results. But either way, check out the options in beta https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.RecognitionConfig
-            logger.info("sending with config" + json.dumps(config_dict))
+            logger.info("sending with config" + str(config_dict))
             
             request_params = {
                 "audio": audio,
@@ -627,13 +627,27 @@ class TranscribeRequest:
     # model:  
     # - Google: "Best for audio that is not one of the specific audio models. For example, long-form audio. Ideally the audio is high-fidelity, recorded at a 16khz or greater sampling rate."
 
+    # https://github.com/GoogleCloudPlatform/python-docs-samples/blob/master/speech/cloud-client/beta_snippets.py#L78
+    _metadataConfig = speech.types.RecognitionMetadata()
+    # only setting this for now; others need to be specified by enduser in client
+    _metadataConfig.interaction_type = (
+        speech.enums.RecognitionMetadata.InteractionType.DICTATION
+    )
     _base_config = {
         "encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
         "language_code": 'km-KH',
+        # not using this for now, so remove
+        #"alternative_language_codes": [
+        #    "en-US"
+        #],
         "sample_rate_hertz": None, 
+        # only works for English
         "enable_automatic_punctuation": True,
         "model": "default", 
-        "max_alternatives": 3, # I think it's free, so why not get more ha
+        "max_alternatives": 3, # I think it's free, so why not get more ha. But makes us store more in firestore, eventually might start having to pay...better to store less unless we actually want to use alts later
+        "enable_word_confidence": True, 
+        "enable_word_time_offsets": True, # returns times
+        "metadata": _metadataConfig,
     }
 
     _flac_config = {
