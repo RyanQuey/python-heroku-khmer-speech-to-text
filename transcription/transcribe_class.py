@@ -634,6 +634,8 @@ class TranscribeRequest:
         "enable_automatic_punctuation": True,
         "model": "default", 
         "max_alternatives": 3, # I think it's free, so why not get more ha
+        "enable_word_confidence": True,
+        "enable_word_time_offsets": True, # returns timestamps
     }
 
     _flac_config = {
