@@ -56,6 +56,7 @@ class TranscribeRequest:
         self.request_options = deepcopy(BASE_REQUEST_OPTIONS)
         self.request_options[self.file_extension] = True
 
+
     #######################
     # getters/translators for getters
     ########################
