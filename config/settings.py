@@ -175,10 +175,14 @@ else:
     CORS_ORIGIN_WHITELIST = [
             "https://khmer-speech-to-text.web.app", # TODO test, not sure if this works yet
             "https://khmer-speech-to-text.firebaseapp.com",
+            "https://www.khmervoiceapp.com",
+            "https://khmervoiceapp.com",
             ]
     CSRF_TRUSTED_ORIGINS = [
             "khmer-speech-to-text.web.app", # TODO test, not sure if this works yet
             "khmer-speech-to-text.firebaseapp.com",
+            "www.khmervoiceapp.com",
+            "khmervoiceapp.com",
             ]
 
 django_heroku.settings(locals())
