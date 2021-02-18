@@ -11,6 +11,7 @@ class TranscribeRequest:
 
     # a dict of custom quotas for this user, if defaults have been overridden
     custom_quotas = None
+    user_email = None
 
     # TODO NOTE no longer file_data, so change var name
     def __init__(self, file_data):
