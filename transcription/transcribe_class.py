@@ -9,6 +9,8 @@ class TranscribeRequest:
     # 3) use data from Firestone or to set the other attributes
     """
 
+    custom_quotas = None
+
     # TODO NOTE no longer file_data, so change var name
     def __init__(self, file_data):
         # necessary parts, or else can't retrieve from db
