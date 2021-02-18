@@ -41,6 +41,9 @@ def transcribe(req):
             # mark request as received in firestore 
             transcribe_request.mark_as_received()
 
+            # check the request using our internal criteria before even sending to Google
+            transcribe_request.validate_request()
+
             transcribe_request.setup_request()
              
             transcribe_request.request_long_running_recognize()

@@ -82,6 +82,35 @@ class TranscribeRequest:
     def user_ref(self):
         return db.collection('users').document(self.user_id)
 
+    def get_user_email(self):
+        """
+        get from db or from cache
+        """
+        if self.user_email == None:
+            self.user_email = self.user_ref().get().to_dict()["email"]
+
+        return self.user_email
+
+    def get_max_size(self):
+        """
+        returns int of max file size in MB for user
+        might hit db depending on if get_custom_quotas has been called before or not
+        """
+        default_file_size_limit = 50 # 50 MB is pretty large, perhaps around 10 minutes of audio for a flac file
+        file_size_limit = self.get_custom_quotas().get("audioFileSizeMB", default_file_size_limit)
+        return file_size_limit
+        
+    def get_custom_quotas(self):
+        """
+        get from db or from cache
+        - returns empty dict if there are no custom quotas set for this user
+        """
+        if self.custom_quotas == None:
+            email = self.get_user_email()
+            self.custom_quotas = db.collection('customQuotas').document(email).get()
+        
+        return self.custom_quotas.to_dict() if self.custom_quotas.exists else {}
+
     def transcript_document_ref(self):
         doc_name = self.transcript_document_name()
         return self.user_ref().collection("transcripts").document(doc_name)
@@ -104,6 +133,20 @@ class TranscribeRequest:
         elapsed_time = now - last_updated_at
 
         return elapsed_time
+
+    ##################
+    # Validation
+    ##################
+
+    def validate_request(self):
+        """
+        check to see if audio file is valid before sending anything to Google
+        - check file size to make sure that it is under 100 MB or custom limit
+        - maybe add other requirements later
+        """
+        max_size = 100
+        if self.size_in_MB() > max_size:
+            raise Exception(f"File size is larger than maximum ({max_size} MB)")
 
     ##################
     # status checkers
