@@ -94,6 +94,10 @@ def resume_request(req):
         status = transcribe_request.status
         logger.info(f"Status is now {status}")
 
+        # check the request using our internal criteria before even sending to Google
+        transcribe_request.validate_request()
+        logger.info("transcribe request validated!")
+
         if transcribe_request.last_request_has_stopped() == False:
             logger.info("making them wait a little bit longer")
             message = "Please wait a little longer before requesting, it's only been {} so far".format(transcribe_request.elapsed_since_last_event())
@@ -111,12 +115,14 @@ def resume_request(req):
             # should not allow client to request a resume if only uploaded, unless updated_at was long enough ago. But eventually will check server side as well
             # check updated_at, then restart if too long ago
             # TODO 
+
             message = _resume_transcribing_or_processing(transcribe_request)
 
         elif status == TRANSCRIPTION_STATUSES[2]: # processing-file (aka server has received)
             # check updated_at, then restart if too long ago
             # note that this stage often takes a while, since sometimes it means converting large files from one format to flac
             # TODO 
+
             message = _resume_transcribing_or_processing(transcribe_request)
 
 

@@ -9,6 +9,7 @@ class TranscribeRequest:
     # 3) use data from Firestone or to set the other attributes
     """
 
+    # a dict of custom quotas for this user, if defaults have been overridden
     custom_quotas = None
 
     # TODO NOTE no longer file_data, so change var name
