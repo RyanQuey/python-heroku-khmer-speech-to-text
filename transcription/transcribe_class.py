@@ -103,7 +103,7 @@ class TranscribeRequest:
         """
         default_file_size_limit = 50 # 50 MB is pretty large, perhaps around 10 minutes of audio for a flac file
         file_size_limit = self.get_custom_quotas().get("audioFileSizeMB", default_file_size_limit)
-        logger.info(f"user file size limit: {self.file_size_limit}")
+        logger.info(f"user file size limit: {file_size_limit}")
 
         return file_size_limit
 
