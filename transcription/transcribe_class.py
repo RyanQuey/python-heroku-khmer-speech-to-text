@@ -115,6 +115,8 @@ class TranscribeRequest:
             email = self.get_user_email()
             self.custom_quotas = db.collection('customQuotas').document(email).get()
         
+        logger.info(f"custom quotas: {self.custom_quotas}")
+        logger.info(f"custom quotas dict: {self.custom_quotas.to_dict()}")
         return self.custom_quotas.to_dict() if self.custom_quotas.exists else {}
 
     def transcript_document_ref(self):
