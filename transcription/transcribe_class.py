@@ -90,6 +90,7 @@ class TranscribeRequest:
     def get_user_email(self):
         """
         get from db or from cache
+        - all users should have an email, so there should be no concern about retriving email from this record in firestore
         """
         if self.user_email == None:
             self.user_email = self.user_ref().get().to_dict()["email"]
@@ -102,7 +103,10 @@ class TranscribeRequest:
         - might hit firebase db depending on if get_custom_quotas has been called before or not
         """
         default_file_size_limit = 50 # 50 MB is pretty large, perhaps around 10 minutes of audio for a flac file
-        file_size_limit = self.get_custom_quotas().get("audioFileSizeMB", default_file_size_limit)
+
+        # converting to float in case it's accidentally stored as string
+        file_size_limit = float(self.get_custom_quotas().get("audioFileSizeMB", default_file_size_limit))
+
         logger.info(f"user file size limit: {file_size_limit}")
 
         return file_size_limit
