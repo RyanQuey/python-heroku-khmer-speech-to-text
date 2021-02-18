@@ -91,15 +91,16 @@ class TranscribeRequest:
 
         return self.user_email
 
-    def get_max_size(self):
+    def get_max_size_mb(self):
         """
         returns int of max file size in MB for user
-        might hit db depending on if get_custom_quotas has been called before or not
+        - might hit firebase db depending on if get_custom_quotas has been called before or not
         """
         default_file_size_limit = 50 # 50 MB is pretty large, perhaps around 10 minutes of audio for a flac file
         file_size_limit = self.get_custom_quotas().get("audioFileSizeMB", default_file_size_limit)
+
         return file_size_limit
-        
+
     def get_custom_quotas(self):
         """
         get from db or from cache
@@ -144,9 +145,12 @@ class TranscribeRequest:
         - check file size to make sure that it is under 100 MB or custom limit
         - maybe add other requirements later
         """
-        max_size = 100
+        max_size = self.get_max_size_mb()
+
         if self.size_in_MB() > max_size:
             raise Exception(f"File size is larger than maximum ({max_size} MB)")
+        else:
+            logger.log_info(f"file size ({self.size_in_MB()}MB) is less than max size ({max_size}MB)")
 
     ##################
     # status checkers

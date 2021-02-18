@@ -38,11 +38,14 @@ python3 -m pip install -r requirements.txt
 # `You need to install postgresql-server-dev-X.Y for building a server-side extension or libpq-dev for building a client-side application`
 # See here: https://stackoverflow.com/a/28938258/6952495
 # If you did, will need the following dependencies in order to install django. If so run the following:
-sudo apt-get install python-psycopg2
-sudo apt-get install libpq-dev
+sudo apt-get install python-psycopg2 libpq-dev
 
 # Now need to set some env vars
 cp ./.env.sample ./.env
+- especially one of either ADMIN_KEY_LOCATION or GOOGLE_APPLICATION_CREDENTIALS (don't need both). Get it from google admin console
+    * note that you only need one or the other. GOOGLE_APPLICATION_CREDENTIALS is what google libs look for by default, but if you don't want to set that as an environment variable for whatever reason (ie because it is where google libs look by default), can use ADMIN_KEY_LOCATION instead
+    * might need ot create a service account with the correct permissions, (or for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key.
+    * is used for firebase admin, google storage, and google speech to text apis
 
 # You're going to want to go in there and change those env vars to fit your setup
 
@@ -72,11 +75,10 @@ honcho run python
 To push to Heroku, you'll need to install the [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli).
 
 ```sh
+# if making new app...
 heroku create
-git push heroku master
-
-# If had a db:
-# heroku run python manage.py migrate
+# OR if in my current app, which deploys with hook to master branch in github: 
+git push
 
 heroku open
 ```

@@ -24,6 +24,7 @@ logger = logging.getLogger('testlogger')
 def transcribe(req): 
     """
     Performs asynchronous speech recognition request on an audio file (< 480 minutes)
+    - goes through the entire request process, and if anything fails along the way logs the error, updates status to failed, and sets a message so that user can tell what failed from the react UI
 
     fields:
       # TODO update fields
@@ -43,6 +44,7 @@ def transcribe(req):
 
             # check the request using our internal criteria before even sending to Google
             transcribe_request.validate_request()
+            logger.info("transcribe request validated!")
 
             transcribe_request.setup_request()
              
