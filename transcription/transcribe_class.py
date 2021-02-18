@@ -114,6 +114,7 @@ class TranscribeRequest:
         """
         if self.custom_quotas == None:
             email = self.get_user_email()
+            logger.info(f"checking firestore at customQuotas/{email}")
             custom_quotas_result = db.collection('customQuotas').document(email).get()
             self.custom_quotas = custom_quotas_result.to_dict() if custom_quotas_result.exists else {}
 
