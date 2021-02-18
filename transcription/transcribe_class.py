@@ -103,6 +103,7 @@ class TranscribeRequest:
         """
         default_file_size_limit = 50 # 50 MB is pretty large, perhaps around 10 minutes of audio for a flac file
         file_size_limit = self.get_custom_quotas().get("audioFileSizeMB", default_file_size_limit)
+        logger.info(f"user file size limit: {self.file_size_limit}")
 
         return file_size_limit
 
@@ -117,6 +118,7 @@ class TranscribeRequest:
             self.custom_quotas = custom_quotas_result.to_dict() if custom_quotas_result.exists else {}
 
 
+        logger.info(f"custom quotas dict: {self.custom_quotas}")
         return self.custom_quotas
 
     def transcript_document_ref(self):
