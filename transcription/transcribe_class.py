@@ -1,4 +1,5 @@
 from .helpers import * 
+logger = logging.getLogger('testlogger')
 
 class TranscribeRequest:
     """
@@ -154,7 +155,7 @@ class TranscribeRequest:
         if self.size_in_MB() > max_size:
             raise Exception(f"File size is larger than maximum ({max_size} MB)")
         else:
-            logger.log_info(f"file size ({self.size_in_MB()}MB) is less than max size ({max_size}MB)")
+            logger.info(f"file size ({self.size_in_MB()}MB) is less than max size ({max_size}MB)")
 
     ##################
     # status checkers
