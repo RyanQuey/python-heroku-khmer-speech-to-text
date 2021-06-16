@@ -57,8 +57,9 @@ cp ./.env.sample ./.env
 You're going to want to go in there and change those env vars to fit your setup. What you need to set:
  - especially one of either ADMIN_KEY_LOCATION or GOOGLE_APPLICATION_CREDENTIALS (don't need both). Get it from google admin console
     * note that you only need one or the other. GOOGLE_APPLICATION_CREDENTIALS is what google libs look for by default, but if you don't want to set that as an environment variable for whatever reason (ie because it is where google libs look by default), can use ADMIN_KEY_LOCATION instead
-    * might need ot create a service account with the correct permissions, ie does not need a role, (or for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key.
+    * for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key. Requires access to firebase sdk, App Engine default service account, Google APIs Service Agent, maybe some others
     * is used for firebase admin, google storage, and google speech to text apis
+    * If this isn't setup correctly, after Browser finishes uploading user audio file to Google storage, it will set status of request to "server-error", in browser console, you should see "Internal Server Error", and django logs, `google.api_core.exceptions.PermissionDenied: 403 Missing or insufficient permissions`
 
 ![image](https://user-images.githubusercontent.com/22231483/122151793-034dd680-ce15-11eb-8d12-8307a80c1283.png)
 
