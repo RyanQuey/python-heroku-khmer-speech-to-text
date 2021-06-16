@@ -40,20 +40,30 @@ python3 -m pip install -r requirements.txt
 # See here: https://stackoverflow.com/a/28938258/6952495
 # If you did, will need the following dependencies in order to install django. If so run the following:
 sudo apt-get install python-psycopg2 libpq-dev
+```
 
-# Now need to set some env vars
+
+### Now need to set some env vars
+```
 cp ./.env.sample ./.env
-# - especially one of either ADMIN_KEY_LOCATION or GOOGLE_APPLICATION_CREDENTIALS (don't need both). Get it from google admin console
-#    * note that you only need one or the other. GOOGLE_APPLICATION_CREDENTIALS is what google libs look for by default, but if you don't want to set that as an environment variable for whatever reason (ie because it is where google libs look by default), can use ADMIN_KEY_LOCATION instead
-#    * might need ot create a service account with the correct permissions, (or for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key.
-#    * is used for firebase admin, google storage, and google speech to text apis
+```
+You're going to want to go in there and change those env vars to fit your setup. What you need to set:
+ - especially one of either ADMIN_KEY_LOCATION or GOOGLE_APPLICATION_CREDENTIALS (don't need both). Get it from google admin console
+    * note that you only need one or the other. GOOGLE_APPLICATION_CREDENTIALS is what google libs look for by default, but if you don't want to set that as an environment variable for whatever reason (ie because it is where google libs look by default), can use ADMIN_KEY_LOCATION instead
+    * might need ot create a service account with the correct permissions, ie does not need a role, (or for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key.
+    * is used for firebase admin, google storage, and google speech to text apis
 
-# You're going to want to go in there and change those env vars to fit your setup
+![image](https://user-images.githubusercontent.com/22231483/122151793-034dd680-ce15-11eb-8d12-8307a80c1283.png)
 
-# start local server
+
+
+
+### start local server
+```
 heroku local
-
-# OR alternatively, can use Honcho for some extra features
+```
+OR alternatively, can use Honcho for some extra features. My preferred way:
+```
 python3 -m pip install honcho
 honcho start -f Procfile.dev
 ```
