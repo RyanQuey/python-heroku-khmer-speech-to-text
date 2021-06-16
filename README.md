@@ -32,14 +32,15 @@ source ./venv/bin/activate
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python3 get-pip.py
 
-# install project dependencies
-python3 -m pip install -r requirements.txt
-
+# make sure to do this before installing python requirements
 # If got following error, will need to install some stuff:
 # `You need to install postgresql-server-dev-X.Y for building a server-side extension or libpq-dev for building a client-side application`
 # See here: https://stackoverflow.com/a/28938258/6952495
 # If you did, will need the following dependencies in order to install django. If so run the following:
 sudo apt-get install python-psycopg2 libpq-dev
+
+# install project dependencies
+python3 -m pip install -r requirements.txt
 ```
 
 
