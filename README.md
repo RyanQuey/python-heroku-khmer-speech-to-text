@@ -14,7 +14,8 @@ Transcript includes highlights based on accuracy percentage, and lists possible 
 
 ## Running Locally
 
-Make sure you have Python 3.7 [installed locally](http://install.python-guide.org). 
+Make sure you have Python 3 [installed locally](http://install.python-guide.org). 
+- Tested on Python 3.6 and 3.7
 
 ```sh
 # clone the repository
@@ -38,6 +39,9 @@ python3 get-pip.py
 # See here: https://stackoverflow.com/a/28938258/6952495
 # If you did, will need the following dependencies in order to install django. If so run the following:
 sudo apt-get install python-psycopg2 libpq-dev
+
+# if don't have wheel yet
+pip3 install wheel
 
 # install project dependencies
 python3 -m pip install -r requirements.txt
