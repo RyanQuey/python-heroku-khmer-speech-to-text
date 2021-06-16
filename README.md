@@ -25,7 +25,8 @@ cd python-heroku-khmer-speech-to-text
 sudo apt-get -y install python3-venv
 
 # open the virtual env in current project
-python3 -m venv venv
+python3 -m venv ./venv
+source ./venv/bin/activate
 
 # If need to get pip (which, there's a decent chance you won't), can run: 
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
