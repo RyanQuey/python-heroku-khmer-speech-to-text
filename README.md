@@ -2,10 +2,12 @@
 
 A Django app (deployed on Heroku) for creating and handling long running asynchronous requests to Google Speech API. For instructions and more information, see the [firebase frontend repo](https://github.com/RyanQuey/khmer_speech_to_text).
 
-## Uploads and Transcription Dashboard
+## Project Architecture
+Lifecycle of a healthy, successful upload/transcription request
+
 We track and display progress as the file uploads to Google Storage, as it is transcribed to Google Speech API, and as it is returned and stored by Firebase.
 
-![Uploading audio](https://github.com/RyanQuey/python-heroku-khmer-speech-to-text/raw/master/screenshots/uploading-audio-file.png)
+![Uploading audio](https://github.com/RyanQuey/python-heroku-khmer-speech-to-text/raw/master/screenshots/khmer-speech-app.architecture.png)
 
 ## Transcript Results
 Transcript includes highlights based on accuracy percentage, and lists possible alternatives on hover. Metadata about the file and the transcription is persisted for future reference.
