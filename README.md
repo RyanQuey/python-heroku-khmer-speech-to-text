@@ -2,10 +2,12 @@
 
 A Django app (deployed on Heroku) for creating and handling long running asynchronous requests to Google Speech API. For instructions and more information, see the [firebase frontend repo](https://github.com/RyanQuey/khmer_speech_to_text).
 
-## Uploads and Transcription Dashboard
+## Project Architecture
+Lifecycle of a healthy, successful upload/transcription request
+
 We track and display progress as the file uploads to Google Storage, as it is transcribed to Google Speech API, and as it is returned and stored by Firebase.
 
-![Uploading audio](https://github.com/RyanQuey/python-heroku-khmer-speech-to-text/raw/master/screenshots/uploading-audio-file.png)
+![Uploading audio](https://github.com/RyanQuey/python-heroku-khmer-speech-to-text/raw/master/screenshots/khmer-speech-app.architecture.png)
 
 ## Transcript Results
 Transcript includes highlights based on accuracy percentage, and lists possible alternatives on hover. Metadata about the file and the transcription is persisted for future reference.
@@ -14,7 +16,8 @@ Transcript includes highlights based on accuracy percentage, and lists possible 
 
 ## Running Locally
 
-Make sure you have Python 3.7 [installed locally](http://install.python-guide.org). 
+Make sure you have Python 3 [installed locally](http://install.python-guide.org). 
+- Tested on Python 3.6 and 3.7
 
 ```sh
 # clone the repository
@@ -25,34 +28,50 @@ cd python-heroku-khmer-speech-to-text
 sudo apt-get -y install python3-venv
 
 # open the virtual env in current project
-python3 -m venv venv
+python3 -m venv ./venv
+source ./venv/bin/activate
 
 # If need to get pip (which, there's a decent chance you won't), can run: 
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python3 get-pip.py
 
-# install project dependencies
-python3 -m pip install -r requirements.txt
-
+# make sure to do this before installing python requirements
 # If got following error, will need to install some stuff:
 # `You need to install postgresql-server-dev-X.Y for building a server-side extension or libpq-dev for building a client-side application`
 # See here: https://stackoverflow.com/a/28938258/6952495
 # If you did, will need the following dependencies in order to install django. If so run the following:
 sudo apt-get install python-psycopg2 libpq-dev
 
-# Now need to set some env vars
+# if don't have wheel yet
+pip3 install wheel
+
+# install project dependencies
+python3 -m pip install -r requirements.txt
+```
+
+
+### Now need to set some env vars
+```
 cp ./.env.sample ./.env
-- especially one of either ADMIN_KEY_LOCATION or GOOGLE_APPLICATION_CREDENTIALS (don't need both). Get it from google admin console
+```
+You're going to want to go in there and change those env vars to fit your setup. What you need to set:
+ - especially one of either ADMIN_KEY_LOCATION or GOOGLE_APPLICATION_CREDENTIALS (don't need both). Get it from google admin console
     * note that you only need one or the other. GOOGLE_APPLICATION_CREDENTIALS is what google libs look for by default, but if you don't want to set that as an environment variable for whatever reason (ie because it is where google libs look by default), can use ADMIN_KEY_LOCATION instead
-    * might need ot create a service account with the correct permissions, (or for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key.
+    * for my account that is live or prod, upload a key to service acct named firebase-adminsdk). Just click "Add Key" and "create new Key" and create a json key. Requires access to firebase sdk, App Engine default service account, Google APIs Service Agent, maybe some others
     * is used for firebase admin, google storage, and google speech to text apis
+    * If this isn't setup correctly, after Browser finishes uploading user audio file to Google storage, it will set status of request to "server-error", in browser console, you should see "Internal Server Error", and django logs, `google.api_core.exceptions.PermissionDenied: 403 Missing or insufficient permissions`
 
-# You're going to want to go in there and change those env vars to fit your setup
+![image](https://user-images.githubusercontent.com/22231483/122151793-034dd680-ce15-11eb-8d12-8307a80c1283.png)
 
-# start local server
+
+
+
+### start local server
+```
 heroku local
-
-# OR alternatively, can use Honcho for some extra features
+```
+OR alternatively, can use Honcho for some extra features. My preferred way:
+```
 python3 -m pip install honcho
 honcho start -f Procfile.dev
 ```
