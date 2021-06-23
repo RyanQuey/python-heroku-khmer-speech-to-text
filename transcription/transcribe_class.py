@@ -283,6 +283,7 @@ class TranscribeRequest:
     def setup_request(self):
         """
         build a config_dict and audio dict to send to Google
+        - does not send anything, just prepares the data to send
         """
 
         try:
@@ -377,11 +378,13 @@ class TranscribeRequest:
                     "400 Must use single channel (mono) audio, but WAV header indicates 2 channels.",
                     # got with fileout.flac 
                     "400 Invalid audio channel count",
+                    "400 audio_channel_count `1` in RecognitionConfig must either be unspecified or match the value in the FLAC header `2`.",
                 ]):
 
                     # try again with different channel configuration
                     logger.info("trying again, but with multiple channel configuration.")
                     self.request_options["multiple_channels"] = True
+                    # call this again, to update the params to send
                     self.setup_request()
                     self.request_long_running_recognize()
 
