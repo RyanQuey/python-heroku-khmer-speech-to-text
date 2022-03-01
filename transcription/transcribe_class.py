@@ -267,7 +267,6 @@ class TranscribeRequest:
         elif operation_dict.get("done"):
             response = operation_dict["response"]
             print(f"got response: \n{response}\n")
-            print(f"response has result: {hasattr(response, "results")}")
             #results = response["results"]
             # looks like google changed their api..
             results = response.results
