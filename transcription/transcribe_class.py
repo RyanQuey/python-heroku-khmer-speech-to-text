@@ -265,7 +265,9 @@ class TranscribeRequest:
 
         # unfortunately, if not done, doesn't set this...so don't access directly
         elif operation_dict.get("done"):
-            results = operation_dict["response"]["results"]
+            response = operation_dict["response"]
+            print(f"got response: \n{response}\n")
+            results = ["results"]
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
 
@@ -518,8 +520,9 @@ class TranscribeRequest:
     def makeItFlac(self, data, options = {}):
         """
         converts file (eg mp3, wav, mp4) to flac file
-        based on ht_tps://github.com/firebase/functions-samples/blob/master/ffmpeg-convert-audio/functions/index.js
-        TODO might be bet_ter in the future, for more flexibility and ease of use, to just use ffmpeg-static and bash code rather than a wrapper, so can write exactly as it would be in the command line
+        - Use case is that even mp3 files seem to work better when converted to flac first for whatever reason
+        - base on https://github.com/firebase/functions-samples/blob/master/ffmpeg-convert-audio/functions/index.js
+        - TODO might be better in the future, for more flexibility and ease of use, to just use ffmpeg-static and bash code rather than a wrapper, so can write exactly as it would be in the command line. However, have to figure out how to install a binary in heroku...and note that they cycle machines
         """
         pass
 
