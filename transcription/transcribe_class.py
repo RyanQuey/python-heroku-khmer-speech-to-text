@@ -268,7 +268,9 @@ class TranscribeRequest:
             response = operation_dict["response"]
             print(f"got response: \n{response}\n")
             print(f"what is done? : {operation_dict.get('done')}\n")
-            results = response["results"]
+            results = response.get("results", [])
+            if len(results) == 0:
+
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
 
@@ -478,7 +480,6 @@ class TranscribeRequest:
         else:
             # for when get operation from operation api directly
             self.utterances = results
-            logger.info(f"utterances: {utterances}")
             for result in results:
                 # TODO remove this when done debugging
                 logger.info(f"result: {result}")
