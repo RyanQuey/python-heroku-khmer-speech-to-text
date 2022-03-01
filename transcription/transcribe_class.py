@@ -478,6 +478,8 @@ class TranscribeRequest:
             # for when get operation from operation api directly
             self.utterances = results
             for result in results:
+                # TODO remove this when done debugging
+                logger.info(f"result: {result}")
                 # First alternative is the most probable result
                 alt = result["alternatives"][0]
                 logger.info(u"Transcript for this result: {}".format(alt["transcript"]))
