@@ -243,7 +243,7 @@ class TranscribeRequest:
         """
         operation_dict = get_operation(self.transaction_id)
         metadata = operation_dict["metadata"]
-        logger.info("metadata from check progress call")
+        logger.info("metadata from check progress call: ")
         logger.info(metadata)
         # 100 (int) if done
         self.transcript_metadata = {}
@@ -267,7 +267,10 @@ class TranscribeRequest:
         elif operation_dict.get("done"):
             response = operation_dict["response"]
             print(f"got response: \n{response}\n")
-            results = response["results"]
+            print(f"response has result: {hasattr(response, "results")}")
+            #results = response["results"]
+            # looks like google changed their api..
+            results = response.results
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
 
