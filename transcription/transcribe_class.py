@@ -267,7 +267,7 @@ class TranscribeRequest:
         elif operation_dict.get("done"):
             response = operation_dict["response"]
             print(f"got response: \n{response}\n")
-            results = ["results"]
+            results = response["results"]
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
 
@@ -477,6 +477,7 @@ class TranscribeRequest:
         else:
             # for when get operation from operation api directly
             self.utterances = results
+            logger.info(f"utterances: {utterances}")
             for result in results:
                 # TODO remove this when done debugging
                 logger.info(f"result: {result}")
