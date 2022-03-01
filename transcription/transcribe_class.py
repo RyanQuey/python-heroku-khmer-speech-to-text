@@ -270,6 +270,7 @@ class TranscribeRequest:
             print(f"what is done? : {operation_dict.get('done')}\n")
             results = response.get("results", [])
             if len(results) == 0:
+                raise Exception('For some reason, no results are here')
 
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
