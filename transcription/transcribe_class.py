@@ -267,9 +267,8 @@ class TranscribeRequest:
         elif operation_dict.get("done"):
             response = operation_dict["response"]
             print(f"got response: \n{response}\n")
-            #results = response["results"]
-            # looks like google changed their api..
-            results = response.results
+            print(f"what is done? : {operation_dict.get("done")}\n")
+            results = response["results"]
             self.mark_as_transcribed()
             self.handle_transcript_results(results)
 
