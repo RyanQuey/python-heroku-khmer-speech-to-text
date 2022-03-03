@@ -27,5 +27,6 @@ for filepath  in $src_dir/*.mp3; do
 	printf "\nfilename: $filename"
 	printf "\nfilename_with_ext: $filename_with_ext"
 	printf "\nextension: $extension"
-	ffmpeg -i "$filepath" "$target_dir/${filename}.flac"
+	# -ac 1 for mono channel
+	ffmpeg -i "$filepath" -ac 1 "$target_dir/${filename}.flac"
 done
