@@ -93,7 +93,7 @@ destination_filename = cwd + "/tmp/"
 
 # note: not all flietypes supported yet. E.g., mp4 might end up being under flac or something. Eventually, handle all file types and either convert file or do something
 # mpeg is often mp3
-FILE_TYPES = ["flac", "mp3", "wav", "mpeg"] 
+FILE_TYPES = ["flac", "mp3", "wav", "mpeg", "x-wav"] 
 file_types_sentence = ", ".join(FILE_TYPES[0:-1]) + ", and " + FILE_TYPES[-1]
 
 # not using right now
