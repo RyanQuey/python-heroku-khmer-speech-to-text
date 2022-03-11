@@ -315,7 +315,7 @@ class TranscribeRequest:
             if (self.file_extension == "flac"):
                 config_dict = TranscribeRequest._flac_config
             
-            elif (self.file_extension == "wav"):
+            elif (self.file_extension in ["wav", "x-wav"]):
                 config_dict = TranscribeRequest._wav_config
             
             elif (self.file_extension in ["mp3", "mpeg"]):
