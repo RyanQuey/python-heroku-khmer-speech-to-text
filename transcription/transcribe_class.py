@@ -317,6 +317,7 @@ class TranscribeRequest:
             
             elif (self.file_extension in ["wav", "x-wav"]):
                 config_dict = TranscribeRequest._wav_config
+                logger.info("Setting as wav with config" + json.dumps(config_dict))
             
             elif (self.file_extension in ["mp3", "mpeg"]):
                 # strangely enough, if send base64 of mp3 file, but use flac_config, returns results like the flac file, but smaller file size. In part, possibly due ot the fact that there is multiple speakers set for flacConfig currently
@@ -325,6 +326,7 @@ class TranscribeRequest:
             else:
                 # This is for other audio files...but not sure if we should support anything else
                 config_dict = TranscribeRequest._base_config
+                logger.info("Setting as default with config" + json.dumps(config_dict))
 
             
             # TODO dynamically test audio for channels
