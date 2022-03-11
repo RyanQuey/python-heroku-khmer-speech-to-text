@@ -724,7 +724,8 @@ class TranscribeRequest:
 
     _wav_config = {
          **_base_config, 
-        "encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
+        #"encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
+        "encoding": None,
         # in docs, they say you don't have to set, but then sometimes it seems like you do need it. It seems like it is because our exports from Davinci Resolve are 48000, so for some reason that messes things up. 
         #"sample_rate_hertz": 48000,  
         "sample_rate_hertz": None,  
