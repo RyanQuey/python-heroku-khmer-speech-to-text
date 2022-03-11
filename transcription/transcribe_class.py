@@ -725,7 +725,8 @@ class TranscribeRequest:
     _wav_config = {
          **_base_config, 
         "encoding": enums.RecognitionConfig.AudioEncoding.LINEAR16,
-         "sample_rate_hertz": None, 
+        # in docs, they say you don't have to set, but then sometimes it seems like you do need it. 
+        "sample_rate_hertz": 16000,  
     }
 
 
