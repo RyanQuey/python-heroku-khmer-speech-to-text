@@ -266,8 +266,6 @@ class TranscribeRequest:
         # unfortunately, if not done, doesn't set this...so don't access directly
         elif operation_dict.get("done"):
             response = operation_dict["response"]
-            print(f"got response: \n{response}\n")
-            print(f"what is done? : {operation_dict.get('done')}\n")
             results = response.get("results", [])
             if len(results) == 0:
                 raise Exception('For some reason, no results are here')
