@@ -93,9 +93,12 @@ honcho run python
 ## Deploying to Heroku
 To push to Heroku, you'll need to install the [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli).
 
+Set remote if not already:
+```
+heroku git:remote -a khmer-speech-to-text-api
+```
+
 ```sh
-# if making new app...
-heroku create
 # OR if in my current app, which deploys with hook to master branch in github: 
 git push
 

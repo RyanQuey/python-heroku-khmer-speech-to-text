@@ -164,7 +164,7 @@ class TranscribeRequest:
         if self.size_in_MB() > max_size:
             raise Exception(f"File size is larger than maximum ({max_size} MB)")
         else:
-            logger.info(f"file size ({self.size_in_MB()}MB) is less than max size ({max_size}MB)")
+            logger.debug(f"file size ({self.size_in_MB()}MB) is less than max size ({max_size}MB)")
 
     ##################
     # status checkers
@@ -290,6 +290,10 @@ class TranscribeRequest:
         - does not send anything, just prepares the data to send
         """
 
+        logger.info("----------------------------------------------------------------")
+        logger.info("Setting up request to send:")
+        logger.info("----------------------------------------------------------------")
+
         try:
             if (self.file_extension not in FILE_TYPES):
                 raise Exception( f'File type {self.file_extension} is not allowed, only {file_types_sentence}')
@@ -333,9 +337,9 @@ class TranscribeRequest:
                 config_dict["audio_channel_count"] = 2 # might try more later, but I think there's normally just two
                 config_dict["enable_separate_recognition_per_channel"] = True
             
-            logger.info("sending file: " + self.filename)
+            logger.info("setting up with file: " + self.filename)
             # TODO consider sending their config object...though maybe has same results. But either way, check out the options in beta https://googleapis.dev/python/speech/latest/gapic/v1p1beta1/types.html#google.cloud.speech_v1p1beta1.types.RecognitionConfig
-            logger.info("sending with config" + json.dumps(config_dict))
+            logger.debug("setting up with config" + json.dumps(config_dict))
             
             request_params = {
                 "audio": audio,
@@ -355,10 +359,13 @@ class TranscribeRequest:
     # TODO if "server-error", have server check things and make sure it's a kind of error that we want to retry, or if not, make the necessary changes before trying again.
     def request_long_running_recognize(self):
         logger.info("----------------------------------------------------------------")
+        logger.info("Sending long running request for the above config")
+        logger.info("----------------------------------------------------------------")
         try:
             logger.info(f"Attempt # {self.attempt_count()}")
 
             logger.info("options here is: " +  json.dumps(self.request_options))
+            logger.info("sendng with config" + json.dumps(self.request_params["config"]))
             # this is initial response, not complete transcript yet
             # TODO handle if there's no file there, ie it got deleted but they request again or something
             operation_future = speech_client.long_running_recognize(self.request_params['config'], self.request_params['audio'], retry=reset_retry)
@@ -366,11 +373,12 @@ class TranscribeRequest:
             self.mark_as_transcribing(operation_future)
 
         except Exception as error:
-            logger.error(traceback.format_exc())
 
             # TODO or maybe try passing in details to the REtry arg?
             logger.error('Error while doing a long-running request:')
-            logger.error(error)
+            logger.error(traceback.format_exc())
+            #logger.error(error)
+
             # TODO add back in maybe, but for now keep things simple
             if (self.failed_attempts < 2):
                 # need at least two, one for if internal error, and then if another is for channels 
