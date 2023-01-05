@@ -93,18 +93,45 @@ honcho run python
 ## Deploying to Heroku
 To push to Heroku, you'll need to install the [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli).
 
+Set remote if not already:
+```
+heroku git:remote -a khmer-speech-to-text-api
+```
+
 ```sh
-# if making new app...
-heroku create
 # OR if in my current app, which deploys with hook to master branch in github: 
 git push
 
 heroku open
 ```
 
+### Set Env vars
+Open the Heroku settings and set the config vars. 
+```
+TIMES=2
+SECRET_KEY='Secret code!!!!'
+DJANGO_ENV='PRODUCTION'
+GUNICORN_CMD_ARGS="--timeout 300"
+ADMIN_KEY_LOCATION='/app/khmer-speech-to-text-a95a2e910a83.json'
+GOOGLE_APPLICATION_CREDENTIALS='/app/khmer-speech-to-text-a95a2e910a83.json'
+SERVICE_ACCOUNT_JSON='copy in the json from the file' 
+```
+Just set `SERVICE_ACCOUNT_JSON` using the `google-admin-service-account.json` file (e.g., `khmer-speech-to-text-a95a2e910a83.json`). Just output it as a single line using this: 
+
+```
+cat khmer-speech-to-text-a95a2e910a83.json | jq -c
+```
+
+You also need to set `ADMIN_KEY_LOCATION` to something, it doesn't matter what really as long as it's pointing at an existing folder, so that the Heroku startup script and take that json and make a file there, and then refer to that file (both the copying and the usage uses the `ADMIN_KEY_LOCATION` var).
+UPDATE: CORRECTION It seems like you DO need `GOOGLE_APPLICATION_CREDENTIALS` set, set that to same path as `ADMIN_KEY_LOCATION`. I think `ADMIN_KEY_LOCATION` is used to create the file from the json config var, `GOOGLE_APPLICATION_CREDENTIALS` is used to communicate with GCP API. 
+
+You can take that output and put it directly into the Heroku Config Var.
+
+
+
 # Released under MIT License
 
-Copyright (c) 2020 Ryan Quey.
+Copyright (c) 2022 Ryan Quey.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

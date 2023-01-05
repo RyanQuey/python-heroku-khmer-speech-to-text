@@ -44,10 +44,12 @@ def transcribe(req):
 
             # check the request using our internal criteria before even sending to Google
             transcribe_request.validate_request()
-            logger.info("transcribe request validated!")
+            logger.debug("transcribe request validated!")
 
+            logger.debug("== setting up request payload to send to Google")
             transcribe_request.setup_request()
              
+            logger.debug("== sending request payload to Google")
             transcribe_request.request_long_running_recognize()
             # an async func, should not stop returning the response
 
@@ -97,7 +99,7 @@ def resume_request(req):
 
         # check the request using our internal criteria before even sending to Google
         transcribe_request.validate_request()
-        logger.info("transcribe request validated!")
+        logger.debug("transcribe request validated!")
 
         if transcribe_request.last_request_has_stopped() == False:
             logger.info("making them wait a little bit longer")
