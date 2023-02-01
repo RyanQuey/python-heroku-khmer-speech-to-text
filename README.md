@@ -105,6 +105,12 @@ git push
 heroku open
 ```
 
+## Checking Heroku Logs
+Tail logs, starting with last 200 lines
+```
+heroku logs -t -n 200 
+```
+
 ### Set Env vars
 Open the Heroku settings and set the config vars. 
 ```
