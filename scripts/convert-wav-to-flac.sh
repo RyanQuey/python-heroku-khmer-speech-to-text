@@ -17,7 +17,7 @@ target_dir=$2
 if [ $# -lt 2 ]
   then
     echo "Need two args, like this:"
-		echo "./convert-mp3-to-flac.sh ./existing-mp3s_dir ./target-flacs_dir"
+		echo "./convert-wav-to-flac.sh ./existing-wav_dir ./target-flacs_dir"
 		exit 1
 fi
 
@@ -25,7 +25,7 @@ fi
 mkdir -p $target_dir
 
 # https://stackoverflow.com/a/965072/6952495
-for filepath  in $src_dir/*.mp3; do
+for filepath in $src_dir/*.wav; do
 	filename_with_ext=$(basename -- "$filepath")
 	filename="${filename_with_ext%.*}"
 	extension="${filename_with_ext##*.}"
@@ -34,8 +34,8 @@ for filepath  in $src_dir/*.mp3; do
 	printf "\nfilename: $filename"
 	printf "\nfilename_with_ext: $filename_with_ext"
 	printf "\nextension: $extension"
-	# -ac 1 for mono channel
-	ffmpeg -i "$filepath" -ac 1 "$target_dir/${filename}.flac"
+	# mono channel, does not affect other settings
+	ffmpeg -i "$filepath" -af aformat=channel_layouts=mono "$target_dir/${filename}.flac"
 done
 
-zip -r $target_dir.zip $target_dir
+#zip -r $target_dir.zip $target_dir
