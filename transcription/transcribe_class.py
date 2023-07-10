@@ -359,7 +359,7 @@ class TranscribeRequest:
     # TODO if "server-error", have server check things and make sure it's a kind of error that we want to retry, or if not, make the necessary changes before trying again.
     def request_long_running_recognize(self):
         logger.info("----------------------------------------------------------------")
-        logger.info("Sending long running request for the above config")
+        logger.info("Sending long running request")
         logger.info("----------------------------------------------------------------")
         try:
             logger.info(f"Attempt # {self.attempt_count()}")
