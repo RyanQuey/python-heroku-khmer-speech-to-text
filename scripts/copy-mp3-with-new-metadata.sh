@@ -98,19 +98,21 @@ declare -a chapters_per_book_nt=(
 if [ $# -lt 2 ]
   then
     echo "Need one args, like this:"
-		echo "./convert-mp3-to-flac.sh ./mp3s_dir ot"
+		echo "./copy-mp3-with-new-metadata-mp3-to-flac.sh ./Old\ Testament ot"
 		echo "OR "
-		echo "./convert-mp3-to-flac.sh ./mp3s_dir nt"
+		echo "./copy-mp3-with-new-metadata.sh ./New\ Testament nt"
 		exit 1
 fi
 
 # final slash matches only directories
 # https://unix.stackexchange.com/a/86724/216300
+# NOTE that this only works on KHOV style directory tree, e.g., 
+# New Testament/01_matthew/01_matthew_01.mp3 etc.
 for this_mp3_directory in $src_dir/*/ ; do
 	echo "in dir: $this_mp3_directory"
 
 	# make a subfolder in this dir for new files
-	target_dir=$this_mp3_directory/$target_dir_name
+	target_dir=$src_dir/$target_dir_name/$this_mp3_directory
 	echo "making $target_dir..."
 
 	# creating target dir if not exists
@@ -166,7 +168,7 @@ for this_mp3_directory in $src_dir/*/ ; do
 			space=" "
 			formatted_book_name="${book_series_num//[-]/$space}${book_name^}"
 			new_track_name="$formatted_book_name $chapter_num"
-			new_album_name=${formatted_book_name}
+			new_album_name="KHOV - ${formatted_book_name}"
 
 			echo "changing trackname to: ${new_track_name}"
 			echo "changing album name to: ${new_album_name}"
@@ -174,7 +176,9 @@ for this_mp3_directory in $src_dir/*/ ; do
 			# track number
 			# https://superuser.com/a/694884/654260
 			# BEWARE -y forces overwrite
-			ffmpeg -y -loglevel quiet -i $filepath \
+			# -n can be faster if don't need to overwrite
+			#ffmpeg -y -loglevel quiet -i $filepath \
+			ffmpeg -n -loglevel quiet -i $filepath \
 				-metadata title="${new_track_name}" \
 				-metadata album="${new_album_name}" \
 				-metadata year=1954 \
