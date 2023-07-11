@@ -196,7 +196,7 @@ for this_mp3_directory in $src_dir/*/ ; do
 
 		fi
 		# can add break to test one chapter per book
-		break
+		#break
 	done
 done
 
