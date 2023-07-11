@@ -140,24 +140,29 @@ for this_mp3_directory in $src_dir/*/ ; do
 		if [[ $filename_with_ext =~ $re ]]; then
 			full_match=${BASH_REMATCH}
 			printf "\nfull match: $full_match\n"
-			book_num=${BASH_REMATCH[1]}
+
+			# also removing leading zeros https://stackoverflow.com/a/11130324/6952495
+			book_num="$((10#${BASH_REMATCH[1]}))"
 			book_series_num=${BASH_REMATCH[2]}
 			book_name=${BASH_REMATCH[3]}
 			chapter_num=${BASH_REMATCH[4]}
 
 			# https://unix.stackexchange.com/a/93030/216300
-			# also removing leading zeroshttps://stackoverflow.com/a/11130324/6952495
-			book_num_zero_index="$((10#$book_num-1))"
+			book_num_zero_index="$(($book_num-1))"
 			printf "\nbook num  $book_num\n"
 
-			if [ "$2" = "ot" ]; then
+			if [ "$ot_or_nt" = "ot" ]; then
 				chapters_for_this_book="${chapters_per_book_ot[$book_num_zero_index]}"
-			elif [ "$2" = "nt" ]; then
+				book_num_in_bible=$book_num
+			elif [ "$ot_or_nt" = "nt" ]; then
 				chapters_for_this_book="${chapters_per_book_nt[$book_num_zero_index]}"
+				book_num_in_bible="$(($book_num+39))"
 			else
 				echo "need to put either ot or nt for 2nd arg..."
 				break
 			fi
+			# so it's properly alphabetical
+			zero_padded_book_num=$(printf %02d $book_num_in_bible)
 
 			printf "\nchapters for this book: $chapters_for_this_book\n"
 
@@ -167,8 +172,11 @@ for this_mp3_directory in $src_dir/*/ ; do
 			
 			space=" "
 			formatted_book_name="${book_series_num//[-]/$space}${book_name^}"
+			# https://stackoverflow.com/a/11392248/6952495
+			formatted_testament=${ot_or_nt^^}
+
 			new_track_name="$formatted_book_name $chapter_num"
-			new_album_name="KHOV - ${formatted_book_name}"
+			new_album_name="KHOV - ${zero_padded_book_num} - ${formatted_book_name} (${formatted_testament})"
 
 			echo "changing trackname to: ${new_track_name}"
 			echo "changing album name to: ${new_album_name}"
@@ -177,8 +185,8 @@ for this_mp3_directory in $src_dir/*/ ; do
 			# https://superuser.com/a/694884/654260
 			# BEWARE -y forces overwrite
 			# -n can be faster if don't need to overwrite
-			#ffmpeg -y -loglevel quiet -i $filepath \
-			ffmpeg -n -loglevel quiet -i $filepath \
+			#ffmpeg -n -loglevel quiet -i $filepath \
+			ffmpeg -y -loglevel quiet -i $filepath \
 				-metadata title="${new_track_name}" \
 				-metadata album="${new_album_name}" \
 				-metadata year=1954 \
@@ -188,7 +196,7 @@ for this_mp3_directory in $src_dir/*/ ; do
 
 		fi
 		# can add break to test one chapter per book
-		#break
+		break
 	done
 done
 
