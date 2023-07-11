@@ -185,8 +185,8 @@ for this_mp3_directory in $src_dir/*/ ; do
 			# https://superuser.com/a/694884/654260
 			# BEWARE -y forces overwrite
 			# -n can be faster if don't need to overwrite
-			#ffmpeg -n -loglevel quiet -i $filepath \
-			ffmpeg -y -loglevel quiet -i $filepath \
+			#ffmpeg -y -loglevel quiet -i $filepath \
+			ffmpeg -n -loglevel quiet -i $filepath \
 				-metadata title="${new_track_name}" \
 				-metadata album="${new_album_name}" \
 				-metadata year=1954 \
@@ -199,5 +199,3 @@ for this_mp3_directory in $src_dir/*/ ; do
 		#break
 	done
 done
-
-zip -r $target_dir.zip $target_dir
